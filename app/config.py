@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     USE_DOCKLING: bool = True  # Set to False for ARM64 to avoid PyTorch/ONNX errors
 
     # Storage Backend Configuration
-    STORAGE_BACKEND: str = "s3"  # Options: "local", "s3"
+    STORAGE_BACKEND: str = "local"  # Options: "local", "s3"
     # UPLOAD_DIR: str = "data/uploads"
     # CACHE_DIR: str = "data/cached_chunks"
 
@@ -83,10 +83,9 @@ class Settings(BaseSettings):
 
     # Cache TTL Configuration (in seconds)
     CACHE_TTL_EMBEDDINGS: int = 604800  # 7 days - embeddings are static
-    CACHE_TTL_RAG: int = 3600           # 1 hour - may change with new documents
-    CACHE_TTL_SQL_GEN: int = 86400      # 24 hours - schema relatively stable
-    CACHE_TTL_SQL_RESULT: int = 900     # 15 minutes - data changes frequently
-
+    CACHE_TTL_RAG: int = 3600  # 1 hour - may change with new documents
+    CACHE_TTL_SQL_GEN: int = 86400  # 24 hours - schema relatively stable
+    CACHE_TTL_SQL_RESULT: int = 900  # 15 minutes - data changes frequently
 
     @property
     def is_lambda(self) -> bool:
