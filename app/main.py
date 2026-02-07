@@ -35,6 +35,9 @@ from app.utils import (
     truncate_text,
 )
 
+# Import routers
+from app.routers import resume_router
+
 # Initialize logging
 logger = setup_logging(log_level="INFO")
 
@@ -110,6 +113,9 @@ CACHE_DIR = Path(settings.CACHE_DIR)
 # Ensure directories exist at startup (before any requests are processed)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Register routers
+app.include_router(resume_router)
 
 
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["Health"])

@@ -163,3 +163,18 @@ Thumbs.db
 node_modules/
 npm-debug.log
 yarn-error.log
+
+# Google Cloud Credentials
+aiautomationgenapi-*.json
+
+# Backups
+*.backup
+.env.backup
+
+# Local State
+pipeline_workspace/state.json
+
+# Excluded Folders
+Resumes/
+rag_documentation/
+machines_categorization/

@@ -12,11 +12,15 @@ semchunk               # Semantic text splitting (used by HybridChunker)
 unstructured[pdf]      # PDF support via poppler (NO PyTorch/ONNX - ARM64 compatible)
 python-magic  # For file type detection (uses system libmagic on macOS)
 pillow  # Image processing for document parsing
-#unstructured[all-docs]
-#pdfminer.six==20231228
+# Resume Processing
+pdfplumber             # PDF text extraction
+python-docx            # DOCX parsing
+pdf2image              # PDF to image conversion for OCR
+
 # Embeddings & Vector DB
 openai
-pinecone[grpc]
+pinecone[grpc]         # Legacy - keeping for backward compatibility
+qdrant-client          # NEW: Qdrant vector database
 tiktoken
 
 # Text-to-SQL
@@ -36,7 +40,8 @@ httpx
 
 # Caching
 numpy  # Efficient binary storage of embeddings
-upstash-redis  # Redis cache for query results (serverless-friendly)
+upstash-redis  # Legacy - keeping for backward compatibility
+redis           # NEW: DragonflyDB client (Redis-compatible)
 
 # AWS Services (for S3 storage backend)
 boto3  # AWS SDK for S3 storage
@@ -47,3 +52,4 @@ pytest-asyncio
 black
 ruff
 moto[s3]  # Mock AWS S3 for testing
+nest-asyncio>=1.5.8
