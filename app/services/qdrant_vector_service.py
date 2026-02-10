@@ -352,6 +352,46 @@ class QdrantVectorService:
             return {"error": str(e)}
 
 
+    def get_all_embeddings(self, limit: int = 1000) -> List[Dict[str, Any]]:
+        """
+        Retrieve all embeddings from the collection (with limit).
+        Useful for batch analysis (clustering, PCA).
+        """
+        try:
+            # Scroll through points
+            points, _ = self.client.scroll(
+                collection_name=self.collection_name,
+                limit=limit,
+                with_vectors=[self.DENSE_VECTOR_NAME],
+                with_payload=True,
+            )
+            
+            results = []
+            for point in points:
+                vector = None
+                # Handle vector response structure (can be dict or direct)
+                if point.vector:
+                    if isinstance(point.vector, dict):
+                        vector = point.vector.get(self.DENSE_VECTOR_NAME)
+                    else:
+                        # Fallback if just one vector returned without name (unlikely with named vectors)
+                        vector = point.vector
+                
+                if vector:
+                    results.append({
+                        "id": str(point.id),
+                        "vector": vector,
+                        "metadata": point.payload or {}
+                    })
+            
+            logger.info(f"Retrieved {len(results)} embeddings for analysis")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch all embeddings: {e}")
+            return []
+
+
 # Convenience function for backward compatibility
 def get_qdrant_service(collection_name: Optional[str] = None) -> QdrantVectorService:
     """Get a QdrantVectorService instance."""

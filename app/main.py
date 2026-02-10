@@ -6,7 +6,7 @@ FastAPI application with document RAG and natural language to SQL capabilities.
 import os
 from contextlib import asynccontextmanager
 from typing import Optional
-from fastapi import FastAPI, status, UploadFile, File, HTTPException
+from fastapi import FastAPI, status, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse
 from datetime import datetime
 from pathlib import Path
@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
     """
     # Startup phase
     logger.info("=" * 60)
-    logger.info("Starting up Multi-Source RAG + Text-to-SQL API...")
+    logger.info("Starting up Texcoms RAG and SQL Services...")
     logger.info("=" * 60)
 
     try:
@@ -84,19 +84,58 @@ async def lifespan(app: FastAPI):
 
     # Shutdown phase
     logger.info("=" * 60)
-    logger.info("Shutting down Multi-Source RAG + Text-to-SQL API...")
+    logger.info("Shutting down Texcoms RAG and SQL Services...")
     logger.info("=" * 60)
 
 
 app = FastAPI(
-    title="Multi-Source RAG + Text-to-SQL API",
-    description="A system that combines document RAG with natural language to SQL conversion",
-    version="0.1.0",
+    title=settings.APP_NAME,
+    description="Texcoms RAG and SQL Services with Advanced Feature Engineering",
+    version=settings.APP_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
     root_path=settings.ROOT_PATH,  # For API Gateway: "/prod", for local: ""
     lifespan=lifespan,
 )
+
+# Security Middleware
+@app.middleware("http")
+async def api_key_security(request: Request, call_next):
+    """
+    Validate x-api-key header for non-public endpoints.
+    """
+    # Skip if security not enabled
+    if not settings.API_SECURITY_KEY:
+        return await call_next(request)
+
+    # Public endpoints whitelist
+    public_paths = {
+        "/", 
+        "/docs", 
+        "/redoc", 
+        "/openapi.json", 
+        "/health", 
+        "/info",
+        "/favicon.ico"
+    }
+    
+    # Check exact match or prefix for public resources
+    if request.url.path in public_paths:
+        return await call_next(request)
+        
+    # Validation
+    api_key = request.headers.get("x-api-key")
+    if not api_key or api_key != settings.API_SECURITY_KEY:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "status": "error",
+                "message": "Unauthorized: Invalid or missing x-api-key header"
+            }
+        )
+        
+    return await call_next(request)
+
 
 # Global service instances (initialized on startup if API keys are available)
 embedding_service: EmbeddingService | None = None
@@ -143,7 +182,7 @@ async def health_check():
 
     return {
         "status": health_status,
-        "service": "Multi-Source RAG + Text-to-SQL API",
+        "service": "Texcoms RAG and SQL Services",
         "timestamp": datetime.utcnow().isoformat(),
         "version": "0.1.0",
         "services": services_status,
@@ -180,7 +219,7 @@ async def get_info():
     """
     return {
         "application": {
-            "name": "Multi-Source RAG + Text-to-SQL",
+            "name": "Texcoms RAG and SQL Services",
             "version": "0.1.0",
             "environment": "development",  # Will be loaded from settings once .env exists
         },
@@ -227,7 +266,7 @@ async def root():
         dict: Welcome message and navigation links
     """
     return {
-        "message": "Welcome to Multi-Source RAG + Text-to-SQL API",
+        "message": "Welcome to Texcoms RAG and SQL Services",
         "version": "0.1.0",
         "status": "Phase 0 Complete - Development Ready",
         "documentation": "/docs",

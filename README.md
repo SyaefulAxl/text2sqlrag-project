@@ -1,4 +1,4 @@
-# Multi-Source RAG + Text-to-SQL System
+# Texcoms RAG and SQL Services
 
 A production-ready FastAPI application that combines **Document RAG (Retrieval-Augmented Generation)** with **Text-to-SQL** capabilities, featuring intelligent query routing, multi-level caching, and cost optimization.
 
@@ -592,7 +592,7 @@ curl http://localhost:8000/health
 ```json
 {
   "status": "healthy",
-  "service": "Multi-Source RAG + Text-to-SQL API",
+  "service": "Texcoms RAG and SQL Services",
   "timestamp": "2026-01-24T10:30:00",
   "version": "0.1.0",
   "services": {

@@ -14,10 +14,11 @@ class Settings(BaseSettings):
     # ═══════════════════════════════════════════════════════════════════
     # Application
     # ═══════════════════════════════════════════════════════════════════
-    APP_NAME: str = "Multi-Source RAG + Text-to-SQL"
+    APP_NAME: str = "Texcoms RAG and SQL Services"
     APP_VERSION: str = "0.1.0"
     ENVIRONMENT: str = "development"
     ROOT_PATH: str = ""
+    API_SECURITY_KEY: Optional[str] = None
 
     # ═══════════════════════════════════════════════════════════════════
     # OpenAI Configuration
@@ -25,12 +26,29 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
 
     # ═══════════════════════════════════════════════════════════════════
+    # Pinecone Configuration (Legacy/Fallback)
+    # ═══════════════════════════════════════════════════════════════════
+    PINECONE_API_KEY: Optional[str] = None
+    PINECONE_ENV: str = "us-west-2"  # Default
+
+    # ═══════════════════════════════════════════════════════════════════
+    # Upstash Redis Configuration (Cloud Cache)
+    # ═══════════════════════════════════════════════════════════════════
+    UPSTASH_REDIS_URL: Optional[str] = None
+    UPSTASH_REDIS_TOKEN: Optional[str] = None
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # OPIK Observability
+    # ═══════════════════════════════════════════════════════════════════
+    OPIK_API_KEY: Optional[str] = None
+
+    # ═══════════════════════════════════════════════════════════════════
     # Qdrant Vector Database (VPS)
     # ═══════════════════════════════════════════════════════════════════
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_API_KEY: Optional[str] = None
-    QDRANT_COLLECTION_DOCUMENTS: str = "documents"
-    QDRANT_COLLECTION_RESUMES: str = "resumes"
+    QDRANT_COLLECTION_DOCUMENTS: str = "texcoms_documents"  # Renamed
+    QDRANT_COLLECTION_RESUMES: str = "texcoms_resumes"    # Renamed
 
     # ═══════════════════════════════════════════════════════════════════
     # SPLADE Sparse Embedding Service (VPS)
@@ -48,13 +66,23 @@ class Settings(BaseSettings):
     # ═══════════════════════════════════════════════════════════════════
     # PostgreSQL Database (VPS)
     # ═══════════════════════════════════════════════════════════════════
-    RESUME_DATABASE_URL: Optional[str] = None
+    TEXCOMS_DB_URL: Optional[str] = None   # Renamed from RESUME_DATABASE_URL
+    RESUME_DATABASE_URL: Optional[str] = None # Keeping for backward compat if needed, but pref is TEXCOMS_DB_URL
+
+    @property
+    def DATABASE_URL(self) -> Optional[str]:
+        return self.TEXCOMS_DB_URL or self.RESUME_DATABASE_URL
 
     # ═══════════════════════════════════════════════════════════════════
     # Redis/DragonflyDB Cache (VPS)
     # ═══════════════════════════════════════════════════════════════════
-    REDIS_URL: Optional[str] = None  # Primary cache
-    DRAGONFLY_URL: str = "redis://localhost:6379"  # Backup/high-performance
+    TEXCOMS_REDIS_URL: Optional[str] = None  # Primary cache (Renamed)
+    REDIS_URL: Optional[str] = None          # Legacy support (keeping to avoid Pydantic error)
+    DRAGONFLY_URL: str = "redis://localhost:6379"
+
+    @property
+    def FINAL_REDIS_URL(self) -> str:
+        return self.TEXCOMS_REDIS_URL or self.REDIS_URL or self.DRAGONFLY_URL
 
     # ═══════════════════════════════════════════════════════════════════
     # Langfuse Monitoring (VPS)

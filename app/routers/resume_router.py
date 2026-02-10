@@ -190,6 +190,24 @@ async def upload_resume(file: UploadFile = File(...)):
                 "cost_usd": analysis_stats.get("cost_usd", 0),
             },
             
+            # Extended Profile (64-column compliance)
+            "extended_profile": {
+                "roles": result["data"].get("roles"),
+                "preferred_location_1": result["data"].get("preferred_location_1"),
+                "preferred_location_2": result["data"].get("preferred_location_2"),
+                "primary_expertise": result["data"].get("primary_expertise"),
+                "secondary_expertise": result["data"].get("secondary_expertise"),
+                "currency": result["data"].get("currency"),
+                "current_ctc": result["data"].get("current_ctc"),
+                "expected_ctc": result["data"].get("expected_ctc"),
+                "notice_period": result["data"].get("notice_period"),
+                "referred_by": result["data"].get("referred_by"),
+                "source": result["data"].get("source"),
+                "remarks": result["data"].get("remarks"),
+                "lead_status": result["data"].get("lead_status"),
+                "date_of_calling": result["data"].get("date_of_calling"),
+            },
+            
             # Total Processing Time
             "total_processing_seconds": result.get("processing_time_seconds"),
         }
@@ -355,4 +373,82 @@ async def get_resume(resume_id: str):
         raise HTTPException(
             status_code=500,
             detail=ErrorResponse.internal_error("get resume", e)
+        )
+@router.post("/analytics", status_code=status.HTTP_200_OK)
+async def get_resume_analytics(
+    cluster_count: int = 5,
+):
+    """
+    Get analytics for all resumes (Clustering, PCA, visualization).
+    
+    Perfoms:
+    1. Fetch all resume embeddings (limit 1000)
+    2. Dimensionality Reduction (PCA) to 2D
+    3. Clustering (K-Means)
+    
+    Returns:
+        List of points with x, y coordinates and cluster assignments.
+    """
+    try:
+        # Get vectors
+        from app.services.qdrant_vector_service import QdrantVectorService
+        from app.config import settings
+        from app.services.feature_engineering_service import get_feature_service
+        
+        qdrant = QdrantVectorService(collection_name=settings.QDRANT_COLLECTION_RESUMES)
+        all_points = qdrant.get_all_embeddings(limit=1000)
+        
+        if not all_points:
+             return {
+                 "status": "success", 
+                 "message": "No data found for analytics", 
+                 "points": []
+             }
+
+        embeddings = [p["vector"] for p in all_points]
+        
+        # Feature Engineering tricks
+        feature_service = get_feature_service()
+        
+        # 1. Reduce Dimensions (PCA) -> 2D for visualization
+        reduced_2d = feature_service.reduce_dimensions(embeddings, n_components=2)
+        
+        # 2. Clustering (KMeans)
+        clusters = feature_service.cluster_embeddings(embeddings, n_clusters=cluster_count)
+        
+        # Combine
+        analytics_data = []
+        for i, point in enumerate(all_points):
+            # Safe access to metadata
+            meta = point.get("metadata", {})
+            data = meta.get("data", {}) # deeply nested in some payloads?
+            
+            # Prepare tooltip info
+            name = meta.get("name") or data.get("name") or "Unknown"
+            designation = meta.get("current_designation") or data.get("current_designation")
+            
+            analytics_data.append({
+                "id": point["id"],
+                "name": name,
+                "x": round(reduced_2d[i][0], 4),
+                "y": round(reduced_2d[i][1], 4),
+                "cluster": clusters[i]["cluster_id"],
+                "cluster_distance": round(clusters[i]["cluster_distance"], 4),
+                "metadata": {
+                    "designation": designation,
+                }
+            })
+            
+        return {
+            "status": "success",
+            "total_points": len(analytics_data),
+            "clusters_requested": cluster_count,
+            "points": analytics_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Analytics failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.internal_error("generate analytics", e)
         )

@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "multidata-rag"
+name = "texcoms-rag-services"
 version = "0.1.0"
-description = "Multi-source RAG with Text-to-SQL capabilities"
+description = "Texcoms RAG and SQL Services with Advanced Feature Engineering"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"

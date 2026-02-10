@@ -42,6 +42,7 @@ httpx
 numpy  # Efficient binary storage of embeddings
 upstash-redis  # Legacy - keeping for backward compatibility
 redis           # NEW: DragonflyDB client (Redis-compatible)
+scikit-learn    # NEW: Advanced feature engineering (clustering, PCA)
 
 # AWS Services (for S3 storage backend)
 boto3  # AWS SDK for S3 storage

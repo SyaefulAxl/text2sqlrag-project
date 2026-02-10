@@ -79,7 +79,9 @@ Return JSON:
     "contact_number": "digits only",
     "email_id": "email@example.com",
     "age": "number or N/A",
-    "current_location": "City, Country"
+    "current_location": "City, Country",
+    "preferred_location_1": "City or Region preference 1",
+    "preferred_location_2": "City or Region preference 2"
 }}"""
 
 STEP2_SYSTEM = f"""You are extracting EMPLOYMENT DATA from a resume.
@@ -108,7 +110,19 @@ Return JSON:
     "skills": ["Spinning Technology", "Quality Control", "etc"],
     "raw_material_expertise": ["Cotton", "Polyester", "etc"],
     "plant_scale_capacity": "50,000 spindles or N/A",
-    "languages_known": ["English", "Hindi", "etc"]
+    "plant_scale_capacity": "50,000 spindles or N/A",
+    "languages_known": ["English", "Hindi", "etc"],
+    
+    "roles": ["Production Manager", "Shift Officer", "etc (extracted from work history)"],
+    "primary_expertise": ["Spinning", "Quality", "etc (Top skill area)"],
+    "secondary_expertise": ["Maintenance", "Manpower Handling", "etc"],
+    
+    "currency": "INR/USD/etc or N/A",
+    "current_ctc": "Current salary amount or N/A",
+    "expected_ctc": "Expected salary amount or N/A",
+    "notice_period": "Notice period in days/months or N/A",
+    "source": "Source mentioned in resume (e.g. LinkedIn, Referral) or N/A",
+    "referred_by": "Name of referrer if mentioned or N/A"
 }}"""
 
 STEP3_SYSTEM = """You are extracting EDUCATION DATA from a resume.

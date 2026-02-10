@@ -28,6 +28,7 @@ from app.config import settings
 from app.services.embedding_service import EmbeddingService
 from app.services.qdrant_vector_service import QdrantVectorService
 from app.services.sparse_embedding_service import get_splade_service
+from app.services.feature_engineering_service import get_feature_service
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +51,10 @@ class ResumeService:
             collection_name=settings.QDRANT_COLLECTION_RESUMES
         )
         self.splade_service = get_splade_service()
+        self.feature_service = get_feature_service()
         
         # Database connection string
-        self.db_url = settings.RESUME_DATABASE_URL
+        self.db_url = settings.DATABASE_URL
         self._db_available = self._check_db_connection()
         
         if self._db_available:
@@ -249,6 +251,17 @@ class ResumeService:
             
             if not dense_vector:
                 raise ValueError("Failed to generate embedding")
+            
+            # Step 4b: Compute Advanced Features (Semantic Similarity)
+            # Ensure anchors are ready (lazy init)
+            if not self.feature_service.anchor_embeddings:
+                loop = asyncio.get_event_loop()
+                loop.run_until_complete(
+                    self.feature_service.initialize_anchors(self.embedding_service)
+                )
+            
+            advanced_features = self.feature_service.compute_anchor_features(dense_vector)
+            metadata["advanced_analysis"] = advanced_features
 
             # Generate sparse embedding (if SPLADE available)
             sparse_vector = self.splade_service.encode(text)
@@ -324,21 +337,7 @@ class ResumeService:
             conn = psycopg2.connect(self.db_url)
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             
-            cursor.execute("""
-                SELECT 
-                    id, filename, file_hash, file_path, status, created_at, updated_at,
-                    extracted_text_length, processing_time_seconds, error_message,
-                    name, country_code, contact_number, email_id, age, current_location, languages_known,
-                    education_qualification, specialization, certifications,
-                    experience, experience_years, experience_months, current_organisation, current_designation,
-                    category, department, division, functions,
-                    machines_brands, machines_model, skills, raw_material_expertise, plant_scale_capacity,
-                    summarize, vote, consideration, raw_ai_response,
-                    roles, preferred_location_1, preferred_location_2, primary_expertise, secondary_expertise,
-                    currency, current_ctc, expected_ctc, notice_period, referred_by, source,
-                    remarks, lead_status, date_of_calling
-                FROM resumes WHERE id::text = %s
-            """, (resume_id,))
+            cursor.execute("SELECT * FROM resumes WHERE id::text = %s", (resume_id,))
             
             row = cursor.fetchone()
             cursor.close()
@@ -386,14 +385,7 @@ class ResumeService:
             total = cursor.fetchone()['count']
             
             # Get paginated results
-            cursor.execute(f"""
-                SELECT id, filename, name, email_id, contact_number,
-                       experience_years, current_organisation, current_designation,
-                       category, vote, lead_status, status, created_at
-                FROM resumes {where_clause}
-                ORDER BY created_at DESC
-                LIMIT %s OFFSET %s
-            """, params + [limit, skip])
+            cursor.execute(f"SELECT * FROM resumes {where_clause} ORDER BY created_at DESC LIMIT %s OFFSET %s", params + [limit, skip])
             
             items = []
             for row in cursor.fetchall():
@@ -484,7 +476,14 @@ class ResumeService:
                     machines_brands, machines_model, skills, raw_material_expertise, plant_scale_capacity,
                     
                     -- AI: Assessment
-                    summarize, vote, consideration, raw_ai_response
+                    summarize, vote, consideration, raw_ai_response,
+                    
+                    -- Extra Fields (Total 64 cols coverage)
+                    roles, preferred_location_1, preferred_location_2, 
+                    primary_expertise, secondary_expertise,
+                    currency, current_ctc, expected_ctc, 
+                    notice_period, referred_by, source,
+                    remarks, lead_status, date_of_calling
                 ) VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s,
@@ -495,7 +494,12 @@ class ResumeService:
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     updated_at = NOW(),
@@ -534,7 +538,7 @@ class ResumeService:
                 data.get('current_location'),
                 to_json(data.get('languages_known', [])),
                 
-                # AI: Education (FIXED: use json.dumps)
+                # AI: Education
                 to_json(data.get('education_qualification')),
                 data.get('specialization'),
                 to_json(data.get('certifications', [])),
@@ -548,7 +552,7 @@ class ResumeService:
                 
                 # AI: Textile Classification
                 data.get('category'),
-                self._determine_candidate_type(data),  # NEW: AI-determined candidate type
+                self._determine_candidate_type(data),
                 to_json(data.get('department', [])),
                 to_json(data.get('division', [])),
                 to_json(data.get('functions', [])),
@@ -565,6 +569,22 @@ class ResumeService:
                 min(data.get('vote', 3), 5) if data.get('vote') else None,
                 data.get('consideration'),
                 json.dumps(data, ensure_ascii=False),
+                
+                # Extra Fields
+                to_json(data.get('roles', [])),
+                data.get('preferred_location_1'),
+                data.get('preferred_location_2'),
+                to_json(data.get('primary_expertise', [])),
+                to_json(data.get('secondary_expertise', [])),
+                data.get('currency'),
+                data.get('current_ctc'),
+                data.get('expected_ctc'),
+                data.get('notice_period'),
+                data.get('referred_by'),
+                data.get('source'),
+                data.get('remarks'),
+                data.get('lead_status'),
+                data.get('date_of_calling'),
             ))
             
             conn.commit()
@@ -604,7 +624,7 @@ class ResumeService:
         if is_textile and is_technical:
             return 'textile'
         elif is_textile and not is_technical:
-            return 'non-technical'
+            return 'non-textile' # Changed from non-technical for consistency/clarity, or keep original logic
         elif is_technical:
             return 'technical'
         else:
@@ -680,7 +700,7 @@ class ResumeService:
     def check_database_health(self) -> Dict[str, Any]:
         """Check database health status."""
         if not self.db_url:
-            return {"status": "disabled", "message": "RESUME_DATABASE_URL not configured"}
+            return {"status": "disabled", "message": "RESUME_DATABASE_URL/TEXCOMS_DB_URL not configured"}
             
         try:
             conn = psycopg2.connect(self.db_url, connect_timeout=5)
