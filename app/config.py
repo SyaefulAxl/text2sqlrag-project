@@ -113,6 +113,8 @@ class Settings(BaseSettings):
     VANNA_TOP_P: float = 0.1
     VANNA_SEED: int = 42
     VANNA_MAX_TOKENS: int = 2000
+    VANNA_PINECONE_INDEX: str = "vanna-sql-training"  # Pinecone index for SQL training
+    VANNA_NAMESPACE: str = "sql-agent"  # Namespace for Vanna vectors
 
     # ═══════════════════════════════════════════════════════════════════
     # Text Chunking Configuration
