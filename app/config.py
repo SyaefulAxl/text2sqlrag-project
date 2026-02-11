@@ -5,11 +5,19 @@ Loads environment variables from .env file.
 
 import os
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from typing import Optional
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",  # Ignore extra environment variables not defined
+    )
 
     # ═══════════════════════════════════════════════════════════════════
     # Application
@@ -30,13 +38,15 @@ class Settings(BaseSettings):
     # ═══════════════════════════════════════════════════════════════════
     PINECONE_API_KEY: Optional[str] = None
     PINECONE_ENV: str = "us-west-2"  # Default
+    PINECONE_ENVIRONMENT: Optional[str] = None  # For vector_service.py compatibility
+    PINECONE_INDEX_NAME: str = "rag-documents"  # Default index name
 
     # ═══════════════════════════════════════════════════════════════════
     # Upstash Redis Configuration (Cloud Cache)
     # ═══════════════════════════════════════════════════════════════════
     UPSTASH_REDIS_URL: Optional[str] = None
     UPSTASH_REDIS_TOKEN: Optional[str] = None
-    
+
     # ═══════════════════════════════════════════════════════════════════
     # OPIK Observability
     # ═══════════════════════════════════════════════════════════════════
@@ -48,7 +58,7 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_API_KEY: Optional[str] = None
     QDRANT_COLLECTION_DOCUMENTS: str = "texcoms_documents"  # Renamed
-    QDRANT_COLLECTION_RESUMES: str = "texcoms_resumes"    # Renamed
+    QDRANT_COLLECTION_RESUMES: str = "texcoms_resumes"  # Renamed
 
     # ═══════════════════════════════════════════════════════════════════
     # SPLADE Sparse Embedding Service (VPS)
@@ -66,8 +76,10 @@ class Settings(BaseSettings):
     # ═══════════════════════════════════════════════════════════════════
     # PostgreSQL Database (VPS)
     # ═══════════════════════════════════════════════════════════════════
-    TEXCOMS_DB_URL: Optional[str] = None   # Renamed from RESUME_DATABASE_URL
-    RESUME_DATABASE_URL: Optional[str] = None # Keeping for backward compat if needed, but pref is TEXCOMS_DB_URL
+    TEXCOMS_DB_URL: Optional[str] = None  # Renamed from RESUME_DATABASE_URL
+    RESUME_DATABASE_URL: Optional[str] = (
+        None  # Keeping for backward compat if needed, but pref is TEXCOMS_DB_URL
+    )
 
     @property
     def DATABASE_URL(self) -> Optional[str]:
@@ -77,7 +89,7 @@ class Settings(BaseSettings):
     # Redis/DragonflyDB Cache (VPS)
     # ═══════════════════════════════════════════════════════════════════
     TEXCOMS_REDIS_URL: Optional[str] = None  # Primary cache (Renamed)
-    REDIS_URL: Optional[str] = None          # Legacy support (keeping to avoid Pydantic error)
+    REDIS_URL: Optional[str] = None  # Legacy support (keeping to avoid Pydantic error)
     DRAGONFLY_URL: str = "redis://localhost:6379"
 
     @property
@@ -145,11 +157,6 @@ class Settings(BaseSettings):
     def is_lambda(self) -> bool:
         """Check if running in AWS Lambda environment."""
         return os.getenv("AWS_LAMBDA_FUNCTION_NAME") is not None
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
 
 
 # Global settings instance
