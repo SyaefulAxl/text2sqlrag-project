@@ -112,15 +112,17 @@ async function handleSendMessage() {
  * Fetch query result from API
  */
 async function fetchQuery(question) {
-  const response = await fetch(API_ENDPOINT, {
+  // Build query parameters
+  const params = new URLSearchParams({
+    question: question,
+    top_k: 10,
+  });
+
+  const response = await fetch(`${API_ENDPOINT}?${params}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      question: question,
-      top_k: 10,
-    }),
   });
 
   if (!response.ok) {
@@ -222,12 +224,12 @@ function addMessage(contentOrData, sender, isError = false) {
       metaDiv.appendChild(badge);
     }
 
-    if (contentOrData.costs) {
+    if (contentOrData.cost && contentOrData.cost.formatted) {
       const badge = document.createElement('span');
       badge.className = 'meta-badge';
       badge.style.background = '#fbbf24';
       badge.style.color = '#000';
-      badge.innerHTML = `💰 ${contentOrData.costs.total_cost}`;
+      badge.innerHTML = `💰 ${contentOrData.cost.formatted.total_cost}`;
       metaDiv.appendChild(badge);
     }
 
@@ -293,22 +295,22 @@ function showDetails(data) {
   }
 
   // Cost Breakdown Section
-  if (data.costs) {
+  if (data.cost) {
     html += `
       <h2>💰 Cost Breakdown</h2>
       <table>
         <tbody>
           <tr>
             <td><strong>Embedding Cost</strong></td>
-            <td>${data.costs.embedding_cost}</td>
+            <td>${data.cost.formatted.embedding_cost}</td>
           </tr>
           <tr>
             <td><strong>LLM Query Cost</strong></td>
-            <td>${data.costs.llm_cost}</td>
+            <td>${data.cost.formatted.llm_cost}</td>
           </tr>
           <tr style="background-color: #f0f9ff; font-weight: bold;">
             <td><strong>Total Query Cost</strong></td>
-            <td>${data.costs.total_cost}</td>
+            <td>${data.cost.formatted.total_cost}</td>
           </tr>
         </tbody>
       </table>

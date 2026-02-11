@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 from fastapi import FastAPI, status, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -96,6 +97,16 @@ app = FastAPI(
     redoc_url="/redoc",
     root_path=settings.ROOT_PATH,  # For API Gateway: "/prod", for local: ""
     lifespan=lifespan,
+)
+
+
+# Add CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins (suitable for frontend development)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

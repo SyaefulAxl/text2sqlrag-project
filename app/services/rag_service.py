@@ -9,6 +9,7 @@ import logging
 from app.config import settings
 from app.services.vector_service import VectorService
 from app.services.embedding_service import EmbeddingService
+from app.services.cost_calculator import CostCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,9 @@ class RAGService:
             raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY in .env file.")
 
         # Initialize services
-        self.embedding_service = EmbeddingService(api_key=self.api_key, query_cache_service=query_cache_service)
+        self.embedding_service = EmbeddingService(
+            api_key=self.api_key, query_cache_service=query_cache_service
+        )
         self.vector_service = VectorService()
         self.llm_client = AsyncOpenAI(api_key=self.api_key)
         self.query_cache_service = query_cache_service  # Optional cache service
@@ -44,7 +47,7 @@ class RAGService:
         question: str,
         top_k: int = 3,
         namespace: str = "default",
-        include_sources: bool = True
+        include_sources: bool = True,
     ) -> Dict[str, Any]:
         """
         Full RAG pipeline: retrieve relevant chunks and generate an answer.
@@ -81,29 +84,39 @@ class RAGService:
                     return {
                         **cached_result,
                         "cache_hit": True,
-                        "cost_saved": "$0.05"  # Approximate GPT-4 cost per query
+                        "cost_saved": "$0.05",  # Approximate GPT-4 cost per query
                     }
             # Step 1: Generate query embedding with usage tracking
-            embeddings, embedding_usage = await self.embedding_service.generate_embeddings([question])
+            embeddings, embedding_usage = await self.embedding_service.generate_embeddings(
+                [question]
+            )
             query_embedding = embeddings[0]
 
             # Step 2: Search for relevant chunks in Pinecone
             search_results = await self.vector_service.search(
-                query_embedding=query_embedding,
-                top_k=top_k,
-                namespace=namespace
+                query_embedding=query_embedding, top_k=top_k, namespace=namespace
             )
 
-            chunks = search_results['chunks']
+            chunks = search_results["chunks"]
 
             if not chunks:
                 return {
                     "question": question,
-                    "answer": "I don't have enough information to answer that question. Please upload relevant documents first.",
+                    "answer": "🤔 I don't have enough information to answer that question. Please upload relevant documents first.",
                     "sources": [],
                     "chunks_used": 0,
                     "model": self.model,
-                    "usage": None  # No LLM call made
+                    "usage": None,  # No LLM call made
+                    "cost": {
+                        "embedding_cost": 0.0,
+                        "llm_cost": 0.0,
+                        "total_cost": 0.0,
+                        "formatted": {
+                            "embedding_cost": "$0.000000",
+                            "llm_cost": "$0.000000",
+                            "total_cost": "$0.000000",
+                        },
+                    },
                 }
 
             # Step 3: Build context from retrieved chunks
@@ -119,46 +132,53 @@ class RAGService:
                     {
                         "role": "system",
                         "content": "You are a helpful assistant that answers questions based on provided context. "
-                                   "If the context doesn't contain enough information to answer the question, "
-                                   "say so explicitly. Always base your answers on the provided context."
+                        "If the context doesn't contain enough information to answer the question, "
+                        "say so explicitly. Always base your answers on the provided context.",
                     },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
+                    {"role": "user", "content": prompt},
                 ],
                 temperature=self.temperature,
-                max_tokens=self.max_tokens
+                max_tokens=self.max_tokens,
             )
 
             answer = response.choices[0].message.content
 
             # Extract LLM usage information for cost tracking
-            llm_usage = {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens
-            } if hasattr(response, 'usage') and response.usage else None
+            llm_usage = (
+                {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                }
+                if hasattr(response, "usage") and response.usage
+                else None
+            )
 
             # Combine embedding + LLM usage
             # Use .get() to handle cases where keys might be missing (e.g., 100% cache hit)
             combined_usage = {
-                "embedding_tokens": embedding_usage.get('total_tokens', 0) if embedding_usage else 0,
-                "llm_prompt_tokens": llm_usage.get('prompt_tokens', 0) if llm_usage else 0,
-                "llm_completion_tokens": llm_usage.get('completion_tokens', 0) if llm_usage else 0,
+                "embedding_tokens": (
+                    embedding_usage.get("total_tokens", 0) if embedding_usage else 0
+                ),
+                "llm_prompt_tokens": llm_usage.get("prompt_tokens", 0) if llm_usage else 0,
+                "llm_completion_tokens": llm_usage.get("completion_tokens", 0) if llm_usage else 0,
                 "total_tokens": (
-                    (embedding_usage.get('total_tokens', 0) if embedding_usage else 0) +
-                    (llm_usage.get('total_tokens', 0) if llm_usage else 0)
-                )
+                    (embedding_usage.get("total_tokens", 0) if embedding_usage else 0)
+                    + (llm_usage.get("total_tokens", 0) if llm_usage else 0)
+                ),
             }
 
-            # Step 6: Format response with usage data
+            # Calculate costs
+            cost_data = CostCalculator.calculate_total_cost(combined_usage, self.model)
+
+            # Step 6: Format response with usage data and costs
             result = {
                 "question": question,
                 "answer": answer,
                 "chunks_used": len(chunks),
                 "model": self.model,
-                "usage": combined_usage  # Include usage data for OPIK cost tracking
+                "usage": combined_usage,  # Include usage data for OPIK cost tracking
+                "cost": cost_data,  # Include detailed cost breakdown
             }
 
             if include_sources:
@@ -169,13 +189,11 @@ class RAGService:
                 cache_key = self.query_cache_service.get_rag_key(question, top_k)
                 ttl = settings.CACHE_TTL_RAG  # Default: 1 hour
                 self.query_cache_service.set(cache_key, result, ttl=ttl, cache_type="rag")
-                logger.info(f"RAG cache MISS - cached result for '{question[:50]}...' (TTL: {ttl}s)")
+                logger.info(
+                    f"RAG cache MISS - cached result for '{question[:50]}...' (TTL: {ttl}s)"
+                )
 
-            return {
-                **result,
-                "cache_hit": False,
-                "cost_saved": "$0.00"
-            }
+            return {**result, "cache_hit": False, "cost_saved": "$0.00"}
 
         except Exception as e:
             raise Exception(f"RAG pipeline failed: {str(e)}")
@@ -191,17 +209,20 @@ class RAGService:
             Formatted context string with heading hierarchy
         """
         import json
+
         context_parts = []
 
         for i, chunk in enumerate(chunks, 1):
-            filename = chunk['metadata'].get('filename', 'Unknown')
-            text = chunk.get('text', '')
-            score = chunk.get('score', 0.0)
+            filename = chunk["metadata"].get("filename", "Unknown")
+            text = chunk.get("text", "")
+            score = chunk.get("score", 0.0)
 
             # NEW: Extract heading hierarchy from Docling metadata
-            headings_json = chunk['metadata'].get('headings', '[]')
+            headings_json = chunk["metadata"].get("headings", "[]")
             try:
-                headings = json.loads(headings_json) if isinstance(headings_json, str) else headings_json
+                headings = (
+                    json.loads(headings_json) if isinstance(headings_json, str) else headings_json
+                )
             except (json.JSONDecodeError, TypeError):
                 headings = []
 
@@ -227,9 +248,25 @@ class RAGService:
         Returns:
             Formatted prompt string
         """
-        prompt = f"""You are a helpful assistant. Answer the question based on the provided context.
+        prompt = f"""You are a helpful and friendly assistant that answers questions based on provided context.
+Your responses should be:
+- Well-formatted with markdown syntax (** for bold, * for italics, # for headings, etc.)
+- Engaging with relevant emojis to make it visually appealing
+- Organized with clear sections using headers and lists
+- Comprehensive but easy to understand
 
-If the context doesn't contain enough information to answer the question, say "I don't have enough information to answer that based on the provided documents."
+Markdown formatting guide:
+- Use **bold** for important terms
+- Use *italics* for emphasis
+- Use # Headings, ## Subheadings for structure
+- Use bullet points (-) for lists
+- Use 1. 2. 3. for ordered lists
+- Use > for blockquotes to highlight key points
+- Use code blocks with ` for technical terms or commands
+
+Always include relevant emojis but don't overdo it. Make the response visually interesting.
+
+If the context doesn't contain enough information to answer the question, say "I don't have enough information to answer that based on the provided documents." explicitly.
 
 Context:
 {context}
@@ -252,20 +289,19 @@ Answer:"""
         sources = []
 
         for chunk in chunks:
-            sources.append({
-                "filename": chunk['metadata'].get('filename', 'Unknown'),
-                "chunk_index": chunk['metadata'].get('chunk_index', 0),
-                "relevance_score": chunk.get('score', 0.0),
-                "preview": chunk.get('text', '')[:200] + "..."  # First 200 chars
-            })
+            sources.append(
+                {
+                    "filename": chunk["metadata"].get("filename", "Unknown"),
+                    "chunk_index": chunk["metadata"].get("chunk_index", 0),
+                    "relevance_score": chunk.get("score", 0.0),
+                    "preview": chunk.get("text", "")[:200] + "...",  # First 200 chars
+                }
+            )
 
         return sources
 
     async def get_similar_chunks(
-        self,
-        question: str,
-        top_k: int = 5,
-        namespace: str = "default"
+        self, question: str, top_k: int = 5, namespace: str = "default"
     ) -> Dict[str, Any]:
         """
         Retrieve similar chunks without generating an answer.
@@ -285,15 +321,13 @@ Answer:"""
 
             # Search for relevant chunks
             search_results = await self.vector_service.search(
-                query_embedding=query_embedding,
-                top_k=top_k,
-                namespace=namespace
+                query_embedding=query_embedding, top_k=top_k, namespace=namespace
             )
 
             return {
                 "question": question,
-                "chunks": search_results['chunks'],
-                "total_found": search_results['total_found']
+                "chunks": search_results["chunks"],
+                "total_found": search_results["total_found"],
             }
 
         except Exception as e:
