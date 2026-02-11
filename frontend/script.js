@@ -27,24 +27,24 @@ if (typeof marked !== 'undefined') {
 
 // Friendly responses and messages
 const friendlyGreetings = [
-  "👋 Hi there, my texcoms friend! I'm your textile knowledge buddy, here to help you explore and understand everything about our textile world. Just ask me anything about the documents, and I'll share what I found with you in the most interesting way possible! Let's learn together! 🚀",
-  "🌟 Hey there! Welcome to your personal textile knowledge assistant. I'm super excited to help you find answers to all your textile-related questions. Whether it's about yarn spinning, fabrics, or textile processes, I'm here for you. Let's dive in together! 💪",
-  "📖 Welcome, my texcoms colleague! I'm your humble guide through the textile knowledge universe. Think of me as your friendly textile expert companion. Ask me literally anything about your documents, and I'll explain it in a way that's super interesting and easy to understand. We've got this! 🎯",
+  "Hi there! I'm your textile knowledge assistant. I'm here to help you explore and understand everything about our textile world. Just ask me anything about the documents!",
+  "Welcome to your personal textile knowledge assistant. I'm here to help you find answers to all your textile-related questions.",
+  "Welcome! I'm your guide through the textile knowledge universe. Ask me anything about your documents, and I'll explain it clearly.",
 ];
 
 const notFoundMessages = [
-  "🤔 We're really sorry about this! 😅 It looks like we don't have enough information in our documents to answer that question yet. But hey, don't you worry my friend! Our amazing expert team would absolutely love to help you with this. Just reach out to them directly and they'll give you the perfect answer with all the clarity you need. Trust me, it'll be worth your time! 💪",
-  "😅 Oops! This knowledge hasn't been updated in our documents yet, but that's totally okay! Here's the good news though - our expert team is just a message away and would genuinely love to help you out. They'll dive deep into your question and give you a detailed answer that really makes sense. Don't hesitate to reach out, friend! 🤝",
-  "🔍 Hmm, I couldn't find the specific information about this in our current documents. But hey, that's what makes our expert team so valuable! Please don't hesitate to contact them directly. They're super knowledgeable, always happy to help, and they'll provide you with the best answer and all the clarity you need. We're all here to support you! 🙌",
+  "We're sorry, but we don't have enough information in our documents to answer that question yet. Please contact our expert team for more help.",
+  "This information hasn't been found in our documents yet. Our expert team would be happy to help you get the answer you need.",
+  "I couldn't find the specific information about this in our current documents. Please contact our team directly for assistance.",
 ];
 
 const loadingMessages = [
-  '⏳ Searching through the documents for you...',
-  '🔍 Let me find that amazing answer for you...',
-  '⚡ Working my textile magic...',
-  '🤔 Thinking deeply about this, my friend...',
-  '📚 Diving into our textile knowledge vault...',
-  '✨ Finding the perfect answer just for you...',
+  'Searching through the documents for you...',
+  'Let me find that answer for you...',
+  'Processing your question...',
+  'Thinking about this question...',
+  'Searching our knowledge base...',
+  'Preparing the answer...',
 ];
 
 // DOM Elements
@@ -55,6 +55,49 @@ const loadingSpinner = document.getElementById('loadingSpinner');
 const responseModal = document.getElementById('responseModal');
 const modalBody = document.getElementById('modalBody');
 const modalClose = document.querySelector('.modal-close');
+
+// Format selection
+let selectedFormat = 'default'; // default, cornell, obsidian, study
+
+/**
+ * Check for common typos and suggest corrections
+ */
+function checkForTypos(text) {
+  const corrections = {
+    'spaning': 'spinning',
+    'weving': 'weaving',
+    'kniting': 'knitting',
+    'dye': 'dye',
+    'fabrick': 'fabric',
+    'yarnn': 'yarn',
+    'thread': 'thread',
+    'loom': 'loom',
+    'fible': 'fibre',
+    'cotton': 'cotton',
+  };
+
+  // Convert text to lowercase for checking
+  const lowerText = text.toLowerCase();
+  
+  for (const [typo, correct] of Object.entries(corrections)) {
+    if (lowerText.includes(typo)) {
+      const correctedText = text.replace(
+        new RegExp(typo, 'gi'),
+        correct
+      );
+      
+      if (correctedText !== text) {
+        return {
+          suggested: true,
+          original: text,
+          corrected: correctedText,
+        };
+      }
+    }
+  }
+
+  return { suggested: false };
+}
 
 // Event Listeners
 sendBtn.addEventListener('click', handleSendMessage);
@@ -79,9 +122,22 @@ async function handleSendMessage() {
 
   if (!question) {
     showError(
-      'Hey there! You gotta ask me something to get started! 😄 What would you like to know about our textile knowledge?',
+      'Hey there! You gotta ask me something to get started! What would you like to know about our textile knowledge?',
     );
     return;
+  }
+
+  // Check for typos and suggest corrections
+  const correctionSuggestion = checkForTypos(question);
+  if (correctionSuggestion && correctionSuggestion.suggested) {
+    const useOriginal = confirm(
+      `Did you mean "${correctionSuggestion.corrected}"?\nClick OK to use the corrected version or Cancel to use "${question}" as is.`
+    );
+    if (useOriginal && correctionSuggestion.corrected !== question) {
+      questionInput.value = correctionSuggestion.corrected;
+      // Don't proceed, let user confirm again
+      return;
+    }
   }
 
   // Add user message to chat
@@ -93,8 +149,8 @@ async function handleSendMessage() {
   showLoading(true, getRandomItem(loadingMessages));
 
   try {
-    // Call API
-    const response = await fetchQuery(question);
+    // Call API with format preference
+    const response = await fetchQuery(question, selectedFormat);
 
     // Add assistant message with answer
     addMessage(response, 'assistant');
@@ -111,11 +167,12 @@ async function handleSendMessage() {
 /**
  * Fetch query result from API
  */
-async function fetchQuery(question) {
+async function fetchQuery(question, format = 'default') {
   // Build query parameters
   const params = new URLSearchParams({
     question: question,
     top_k: 10,
+    format_style: format,
   });
 
   const response = await fetch(`${API_ENDPOINT}?${params}`, {
@@ -143,11 +200,11 @@ function getFriendlyErrorMessage(error) {
   if (errorMsg.includes('not found') || errorMsg.includes('not available')) {
     return getRandomItem(notFoundMessages);
   } else if (errorMsg.includes('connection') || errorMsg.includes('cannot')) {
-    return "🔌 Oops! My friend, I'm having trouble connecting to the backend. It seems the API server might not be running on port 8000. No worries though! Just make sure the server is up and running, then give it another shot. We'll get you sorted! 🚀";
+    return "Connection Error: I'm having trouble connecting to the backend. Please ensure the API server is running on port 8000 and try again.";
   } else if (errorMsg.includes('validation')) {
-    return "📋 Hey there! It looks like there might be a little issue with how your question was formatted. No biggie! Just try rephrasing it a bit and ask again. I'm here to help! 😊";
+    return "Validation Error: There might be an issue with how your question was formatted. Please try rephrasing it.";
   } else {
-    return `😟 Oh man, something went a bit sideways on our end: ${escapeHtml(error.message)}. But hey, don't worry! Please give it another try, or if it keeps happening, reach out to our expert team - they'd be happy to help you out! 🤝`;
+    return `Error: ${escapeHtml(error.message)}. Please try again or contact our support team.`;
   }
 }
 
@@ -224,12 +281,10 @@ function addMessage(contentOrData, sender, isError = false) {
       metaDiv.appendChild(badge);
     }
 
-    if (contentOrData.cost && contentOrData.cost.formatted) {
+    if (contentOrData.model) {
       const badge = document.createElement('span');
       badge.className = 'meta-badge';
-      badge.style.background = '#fbbf24';
-      badge.style.color = '#000';
-      badge.innerHTML = `💰 ${contentOrData.cost.formatted.total_cost}`;
+      badge.innerHTML = `🤖 ${contentOrData.model}`;
       metaDiv.appendChild(badge);
     }
 

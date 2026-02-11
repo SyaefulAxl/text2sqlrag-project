@@ -500,14 +500,15 @@ async def upload_document(file: UploadFile = File(...)):
 
 @app.post("/query/documents", status_code=status.HTTP_200_OK, tags=["Query"])
 @track(name="query_documents", type="llm")
-async def query_documents(question: str, top_k: int = 3):
+async def query_documents(question: str, top_k: int = 3, format_style: str = "default"):
     """
     Query documents using RAG (Retrieval-Augmented Generation).
-    Retrieves relevant chunks and generates an answer using GPT-4.
+    Retrieves relevant chunks and generates an answer using GPT-4o Mini.
 
     Args:
         question: The question to answer (3-1000 characters)
         top_k: Number of document chunks to retrieve (1-10, default: 3)
+        format_style: Output format style (default, cornell, obsidian, study)
 
     Returns:
         dict: Generated answer with sources and metadata
@@ -521,6 +522,10 @@ async def query_documents(question: str, top_k: int = 3):
     try:
         question = QueryValidator.validate_question(question)
         top_k = QueryValidator.validate_top_k(top_k)
+        # Validate format_style
+        valid_formats = ["default", "cornell", "obsidian", "study"]
+        if format_style not in valid_formats:
+            format_style = "default"
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=ErrorResponse.validation_error(str(e)))
 
@@ -535,7 +540,7 @@ async def query_documents(question: str, top_k: int = 3):
 
     try:
         result = await rag_service.generate_answer(
-            question=question, top_k=top_k, namespace="default", include_sources=True
+            question=question, top_k=top_k, namespace="default", include_sources=True, format_style=format_style
         )
 
         # Update OPIK span with metadata and cost tracking
@@ -553,7 +558,7 @@ async def query_documents(question: str, top_k: int = 3):
                         "chunks_retrieved": result.get("chunks_used", 0),
                         "model": result.get("model", "unknown"),
                     },
-                    "model": "gpt-4-turbo-preview",
+                    "model": "gpt-4o-mini",
                     "provider": "openai",
                 }
 

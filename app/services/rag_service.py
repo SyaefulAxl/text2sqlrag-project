@@ -38,7 +38,7 @@ class RAGService:
         self.query_cache_service = query_cache_service  # Optional cache service
 
         # LLM configuration
-        self.model = "gpt-4-turbo-preview"
+        self.model = "gpt-4o-mini"  # Cost-optimized model
         self.temperature = 0.1
         self.max_tokens = 1000
 
@@ -48,6 +48,7 @@ class RAGService:
         top_k: int = 3,
         namespace: str = "default",
         include_sources: bool = True,
+        format_style: str = "default",
     ) -> Dict[str, Any]:
         """
         Full RAG pipeline: retrieve relevant chunks and generate an answer.
@@ -62,6 +63,7 @@ class RAGService:
             top_k: Number of chunks to retrieve (default: 3)
             namespace: Pinecone namespace to search (default: "default")
             include_sources: Whether to include source citations (default: True)
+            format_style: Output format style (default, cornell, obsidian, study)
 
         Returns:
             Dictionary containing:
@@ -102,7 +104,7 @@ class RAGService:
             if not chunks:
                 return {
                     "question": question,
-                    "answer": "🤔 I don't have enough information to answer that question. Please upload relevant documents first.",
+                    "answer": "I don't have enough information to answer that question. Please upload relevant documents first.",
                     "sources": [],
                     "chunks_used": 0,
                     "model": self.model,
@@ -122,8 +124,8 @@ class RAGService:
             # Step 3: Build context from retrieved chunks
             context = self._build_context(chunks)
 
-            # Step 4: Create prompt for LLM
-            prompt = self._create_prompt(question, context)
+            # Step 4: Create prompt for LLM with format style
+            prompt = self._create_prompt(question, context, format_style)
 
             # Step 5: Generate answer using LLM
             response = await self.llm_client.chat.completions.create(
@@ -237,36 +239,31 @@ class RAGService:
 
         return "\n".join(context_parts)
 
-    def _create_prompt(self, question: str, context: str) -> str:
+    def _create_prompt(self, question: str, context: str, format_style: str = "default") -> str:
         """
-        Create the prompt for the LLM.
+        Create the prompt for the LLM with optional format style.
 
         Args:
             question: User's question
             context: Retrieved context
+            format_style: Output format (default, cornell, obsidian, study)
 
         Returns:
             Formatted prompt string
         """
-        prompt = f"""You are a helpful and friendly assistant that answers questions based on provided context.
+        format_instructions = self._get_format_instructions(format_style)
+        
+        prompt = f"""You are a helpful educational assistant that answers questions based on provided context.
 Your responses should be:
-- Well-formatted with markdown syntax (** for bold, * for italics, # for headings, etc.)
-- Engaging with relevant emojis to make it visually appealing
-- Organized with clear sections using headers and lists
-- Comprehensive but easy to understand
+- Well-organized with clear hierarchy
+- Use bullet points to break down information
+- Highlight key concepts and main points
+- Comprehensive but easy to understand for learning purposes
+- Professional without unnecessary decorations
 
-Markdown formatting guide:
-- Use **bold** for important terms
-- Use *italics* for emphasis
-- Use # Headings, ## Subheadings for structure
-- Use bullet points (-) for lists
-- Use 1. 2. 3. for ordered lists
-- Use > for blockquotes to highlight key points
-- Use code blocks with ` for technical terms or commands
+{format_instructions}
 
-Always include relevant emojis but don't overdo it. Make the response visually interesting.
-
-If the context doesn't contain enough information to answer the question, say "I don't have enough information to answer that based on the provided documents." explicitly.
+Important: If the context doesn't contain enough information to answer the question, say "I don't have enough information to answer that based on the provided documents." explicitly.
 
 Context:
 {context}
@@ -275,6 +272,42 @@ Question: {question}
 
 Answer:"""
         return prompt
+
+    def _get_format_instructions(self, format_style: str) -> str:
+        """
+        Get format instructions based on style.
+        
+        Args:
+            format_style: Style of formatting (default, cornell, obsidian, study)
+        
+        Returns:
+            Format instructions string
+        """
+        formats = {
+            "cornell": """Format the answer in Cornell Note-Taking style:
+- Divide concept notes: main ideas on left, supporting details on right
+- Use hierarchical bullet points
+- Include summary section at bottom
+- Format: **Key Concept**: [definition]""",
+            "obsidian": """Format as Obsidian-compatible Markdown:
+- Use ## Headings for main topics and ### for subtopics
+- Use bold for important terms: **term**
+- Use - for bullet points with nested indentation
+- Use > for important blockquotes
+- Create logical hierarchy with proper nesting""",
+            "study": """Format as Study Guide:
+- Start with **Key Points** section
+- Define important terms with **Term**: [definition]
+- Include **Examples** where applicable
+- End with **Summary** and **Review Questions**
+- Use hierarchical bullet points""",
+            "default": """Format with clear structure:
+- Use **bold** for important terms
+- Use - for bullet points with nested indentation
+- Organize by topic logically
+- Break down complex ideas into main points and sub-points"""
+        }
+        return formats.get(format_style, formats["default"])
 
     def _format_sources(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
