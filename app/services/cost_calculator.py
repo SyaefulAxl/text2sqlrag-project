@@ -9,13 +9,17 @@ from typing import Dict, Any
 class CostCalculator:
     """Service for calculating API costs."""
 
-    # OpenAI Pricing (as of 2024)
+    # OpenAI Pricing (as of 2026)
     PRICING = {
         "embedding": {
             "text-embedding-3-small": 0.02 / 1_000_000,  # $0.02 per 1M tokens
             "text-embedding-3-large": 0.13 / 1_000_000,  # $0.13 per 1M tokens
         },
         "llm": {
+            "gpt-4.1-nano": {
+                "prompt": 0.10 / 1_000_000,  # $0.10 per 1M prompt tokens
+                "completion": 0.40 / 1_000_000,  # $0.40 per 1M completion tokens
+            },
             "gpt-4-turbo-preview": {
                 "prompt": 0.01 / 1000,  # $0.01 per 1K prompt tokens
                 "completion": 0.03 / 1000,  # $0.03 per 1K completion tokens
@@ -41,17 +45,17 @@ class CostCalculator:
     def calculate_llm_cost(
         prompt_tokens: int,
         completion_tokens: int,
-        model: str = "gpt-4-turbo-preview",
+        model: str = "gpt-4.1-nano",
     ) -> float:
         """Calculate cost for LLM tokens."""
         model_pricing = CostCalculator.PRICING["llm"].get(model, {})
-        prompt_rate = model_pricing.get("prompt", 0.01 / 1000)
-        completion_rate = model_pricing.get("completion", 0.03 / 1000)
+        prompt_rate = model_pricing.get("prompt", 0.10 / 1_000_000)
+        completion_rate = model_pricing.get("completion", 0.40 / 1_000_000)
         return (prompt_tokens * prompt_rate) + (completion_tokens * completion_rate)
 
     @staticmethod
     def calculate_total_cost(
-        usage: Dict[str, Any], llm_model: str = "gpt-4-turbo-preview"
+        usage: Dict[str, Any], llm_model: str = "gpt-4.1-nano"
     ) -> Dict[str, Any]:
         """Calculate total cost from usage data."""
         embedding_tokens = usage.get("embedding_tokens", 0)

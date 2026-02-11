@@ -87,7 +87,6 @@ async function handleSendMessage() {
     return;
   }
 
-
   // Add user message to chat
   addMessage(question, 'user');
   questionInput.value = '';

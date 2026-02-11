@@ -38,7 +38,7 @@ class RAGService:
         self.query_cache_service = query_cache_service  # Optional cache service
 
         # LLM configuration
-        self.model = "gpt-4-turbo-preview"  # High quality model
+        self.model = "gpt-4.1-nano"  # Fast, cost-efficient model with intelligent processing
         self.temperature = 0.1
         self.max_tokens = 1000
 
@@ -76,9 +76,9 @@ class RAGService:
                 - cost_saved: Estimated cost saved if cache hit (NEW)
         """
         try:
-            # Step 0: Correct any typos in the question
+            # Step 0: Correct any typos in the question using AI
             original_question = question
-            corrected_question, was_corrected = self._correct_typos(question)
+            corrected_question, was_corrected = await self._correct_typos(question)
             if was_corrected:
                 logger.info(f"Typo correction: '{original_question}' → '{corrected_question}'")
                 question = corrected_question
@@ -250,9 +250,9 @@ class RAGService:
 
         return "\n".join(context_parts)
 
-    def _correct_typos(self, text: str) -> tuple[str, bool]:
+    async def _correct_typos(self, text: str) -> tuple[str, bool]:
         """
-        Detect and correct common typos in the question.
+        Let AI intelligently detect and correct typos in the question.
 
         Args:
             text: Input text
@@ -260,31 +260,42 @@ class RAGService:
         Returns:
             Tuple of (corrected_text, was_corrected)
         """
-        corrections = {
-            'spaning': 'spinning',
-            'weving': 'weaving',
-            'kniting': 'knitting',
-            'fabrick': 'fabric',
-            'fible': 'fibre',
-            'yarnn': 'yarn',
-            'thrread': 'thread',
-            'looom': 'loom',
-            'cottton': 'cotton',
-        }
+        try:
+            # Use LLM to intelligently detect and correct typos
+            correction_prompt = f"""You are an expert at detecting and correcting typos in questions.
+Analyze the following question and:
+1. Identify ANY spelling mistakes or typos (not just predefined ones)
+2. Correct them intelligently based on context
+3. If no typos found, return the original text
+4. Response format: ONLY return the corrected text, nothing else
 
-        corrected = text
-        was_corrected = False
+Question: {text}
 
-        for typo, correct in corrections.items():
-            if typo.lower() in text.lower():
-                # Case-insensitive replacement
-                import re
-                pattern = re.compile(re.escape(typo), re.IGNORECASE)
-                if pattern.search(text):
-                    corrected = pattern.sub(correct, corrected)
-                    was_corrected = True
+Corrected question:"""
 
-        return corrected, was_corrected
+            response = await self.llm_client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a typo detection and correction expert. Return ONLY the corrected text.",
+                    },
+                    {"role": "user", "content": correction_prompt},
+                ],
+                temperature=0.1,
+                max_tokens=200,
+            )
+
+            corrected = response.choices[0].message.content.strip()
+
+            # Check if anything actually changed
+            was_corrected = corrected.lower() != text.lower()
+
+            return corrected, was_corrected
+
+        except Exception as e:
+            logger.warning(f"Typo correction failed: {str(e)}, using original text")
+            return text, False
 
     def _create_prompt(self, question: str, context: str, format_style: str = "default") -> str:
         """
