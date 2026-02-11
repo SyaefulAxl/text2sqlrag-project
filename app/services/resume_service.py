@@ -20,6 +20,7 @@ from psycopg2.extras import RealDictCursor
 # Fix for "This event loop is already running" error in FastAPI
 try:
     import nest_asyncio
+
     nest_asyncio.apply()
 except ImportError:
     pass  # nest_asyncio not required if not in async context
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 class ResumeService:
     """
     Main service for resume processing pipeline.
-    
+
     Pipeline: Upload → OCR → AI Analysis → Store Metadata → Vector Index
     """
 
@@ -52,11 +53,11 @@ class ResumeService:
         )
         self.splade_service = get_splade_service()
         self.feature_service = get_feature_service()
-        
+
         # Database connection string
-        self.db_url = settings.DATABASE_URL
+        self.db_url = settings.FINAL_DATABASE_URL
         self._db_available = self._check_db_connection()
-        
+
         if self._db_available:
             logger.info("ResumeService initialized with PostgreSQL")
         else:
@@ -70,12 +71,12 @@ class ResumeService:
     ) -> Dict[str, Any]:
         """
         Process a resume through the full pipeline.
-        
+
         Args:
             file: File-like object containing resume
             filename: Original filename
             metadata: Optional additional metadata
-            
+
         Returns:
             Dict with processing results including extracted data
         """
@@ -97,7 +98,9 @@ class ResumeService:
             # Step 1b: Check for duplicates (same file uploaded before)
             existing = self._check_duplicate(result["file_hash"])
             if existing:
-                logger.info(f"Duplicate detected: {filename} matches existing resume {existing['id']}")
+                logger.info(
+                    f"Duplicate detected: {filename} matches existing resume {existing['id']}"
+                )
                 # Clean up the newly saved file
                 file_path.unlink(missing_ok=True)
                 return {
@@ -111,9 +114,10 @@ class ResumeService:
 
             # Step 2: Extract text (OCR if needed)
             from app.services.resume_ocr_service import ResumeOCRService
+
             ocr_service = ResumeOCRService()
             text, ocr_stats = ocr_service.extract_text(file_path)
-            
+
             if not text or len(text) < 50:
                 result["status"] = "failed"
                 result["error"] = "Could not extract text from resume"
@@ -124,9 +128,10 @@ class ResumeService:
 
             # Step 3: AI Analysis
             from app.services.resume_analyzer_service import ResumeAnalyzerService
+
             analyzer = ResumeAnalyzerService()
             analysis_data, analysis_stats = analyzer.analyze(text, filename)
-            
+
             if not analysis_data:
                 result["status"] = "failed"
                 result["error"] = "AI analysis failed"
@@ -159,11 +164,14 @@ class ResumeService:
             result["processing_time_seconds"] = (datetime.now() - start_time).total_seconds()
 
             # Step 7: Register hash for deduplication
-            self._register_hash(result["file_hash"], {
-                "id": result["id"],
-                "data": result["data"],
-                "filename": filename,
-            })
+            self._register_hash(
+                result["file_hash"],
+                {
+                    "id": result["id"],
+                    "data": result["data"],
+                    "filename": filename,
+                },
+            )
 
             logger.info(f"Resume processed: {filename} in {result['processing_time_seconds']:.2f}s")
             return result
@@ -172,13 +180,13 @@ class ResumeService:
             logger.error(f"Resume processing failed: {e}")
             result["status"] = "failed"
             result["error"] = str(e)
-            
+
             # Store failed result in DB for tracking
             try:
                 self._store_failed_resume(result, str(e))
             except:
                 pass
-                
+
             return result
 
     def _save_file(
@@ -200,7 +208,7 @@ class ResumeService:
         # Write file
         content = file.read()
         file_path.write_bytes(content)
-        
+
         logger.debug(f"Saved resume to {file_path}")
         return file_path
 
@@ -215,20 +223,20 @@ class ResumeService:
     def _check_duplicate(self, file_hash: str) -> Optional[Dict[str, Any]]:
         """
         Check if a resume with this hash was already processed.
-        
+
         Uses in-memory registry for now.
         TODO: Replace with database lookup when RESUME_DATABASE_URL is configured.
         """
-        if not hasattr(self, '_hash_registry'):
+        if not hasattr(self, "_hash_registry"):
             self._hash_registry = {}
-        
+
         return self._hash_registry.get(file_hash)
 
     def _register_hash(self, file_hash: str, resume_data: Dict[str, Any]):
         """Register a processed resume hash."""
-        if not hasattr(self, '_hash_registry'):
+        if not hasattr(self, "_hash_registry"):
             self._hash_registry = {}
-        
+
         self._hash_registry[file_hash] = resume_data
 
     def _index_resume(
@@ -248,10 +256,10 @@ class ResumeService:
                 self.embedding_service.generate_embeddings([text])
             )
             dense_vector = embeddings[0] if embeddings else None
-            
+
             if not dense_vector:
                 raise ValueError("Failed to generate embedding")
-            
+
             # Step 4b: Compute Advanced Features (Semantic Similarity)
             # Ensure anchors are ready (lazy init)
             if not self.feature_service.anchor_embeddings:
@@ -259,7 +267,7 @@ class ResumeService:
                 loop.run_until_complete(
                     self.feature_service.initialize_anchors(self.embedding_service)
                 )
-            
+
             advanced_features = self.feature_service.compute_anchor_features(dense_vector)
             metadata["advanced_analysis"] = advanced_features
 
@@ -288,12 +296,12 @@ class ResumeService:
     ) -> List[Dict[str, Any]]:
         """
         Semantic search across resumes.
-        
+
         Args:
             query: Search query
             top_k: Number of results
             filters: Optional metadata filters
-            
+
         Returns:
             List of matching resumes with scores
         """
@@ -304,10 +312,10 @@ class ResumeService:
                 self.embedding_service.generate_embeddings([query])
             )
             query_dense = embeddings[0] if embeddings else None
-            
+
             if not query_dense:
                 raise ValueError("Failed to generate query embedding")
-            
+
             query_sparse = self.splade_service.encode(query)
 
             # Search
@@ -328,28 +336,28 @@ class ResumeService:
         """Get resume by ID from database with all 53 columns."""
         if not self._db_available:
             # Check in-memory registry
-            for data in getattr(self, '_hash_registry', {}).values():
-                if data.get('id') == resume_id:
+            for data in getattr(self, "_hash_registry", {}).values():
+                if data.get("id") == resume_id:
                     return data
             return None
-            
+
         try:
             conn = psycopg2.connect(self.db_url)
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            
+
             cursor.execute("SELECT * FROM resumes WHERE id::text = %s", (resume_id,))
-            
+
             row = cursor.fetchone()
             cursor.close()
             conn.close()
-            
+
             if row:
                 result = dict(row)
                 # Convert UUID to string
-                result['id'] = str(result['id'])
+                result["id"] = str(result["id"])
                 return result
             return None
-            
+
         except Exception as e:
             logger.error(f"Database lookup failed: {e}")
             return None
@@ -363,45 +371,48 @@ class ResumeService:
         """List resumes with pagination."""
         if not self._db_available:
             return {
-                "items": list(getattr(self, '_hash_registry', {}).values()),
-                "total": len(getattr(self, '_hash_registry', {})),
+                "items": list(getattr(self, "_hash_registry", {}).values()),
+                "total": len(getattr(self, "_hash_registry", {})),
                 "skip": skip,
                 "limit": limit,
             }
-            
+
         try:
             conn = psycopg2.connect(self.db_url)
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            
+
             # Build query
             where_clause = ""
             params = []
             if status:
                 where_clause = "WHERE status = %s"
                 params.append(status)
-            
+
             # Get total count
             cursor.execute(f"SELECT COUNT(*) FROM resumes {where_clause}", params)
-            total = cursor.fetchone()['count']
-            
+            total = cursor.fetchone()["count"]
+
             # Get paginated results
-            cursor.execute(f"SELECT * FROM resumes {where_clause} ORDER BY created_at DESC LIMIT %s OFFSET %s", params + [limit, skip])
-            
+            cursor.execute(
+                f"SELECT * FROM resumes {where_clause} ORDER BY created_at DESC LIMIT %s OFFSET %s",
+                params + [limit, skip],
+            )
+
             items = []
             for row in cursor.fetchall():
                 item = dict(row)
-                item['id'] = str(item['id'])  # Convert UUID
+                item["id"] = str(item["id"])  # Convert UUID
                 items.append(item)
             cursor.close()
             conn.close()
-            
+
             return {
                 "items": items,
                 "total": total,
                 "skip": skip,
                 "limit": limit,
             }
-            
+
         except Exception as e:
             logger.error(f"Database list failed: {e}")
             return {
@@ -411,7 +422,7 @@ class ResumeService:
                 "limit": limit,
                 "error": str(e),
             }
-    
+
     def _check_db_connection(self) -> bool:
         """Check if database is available."""
         if not self.db_url:
@@ -423,23 +434,23 @@ class ResumeService:
         except Exception as e:
             logger.warning(f"Database not available: {e}")
             return False
-    
+
     def _store_in_database(self, result: Dict[str, Any], text: str) -> bool:
         """Store resume data in PostgreSQL with full metrics."""
         if not self._db_available:
             return False
-            
+
         try:
             conn = psycopg2.connect(self.db_url)
             cursor = conn.cursor()
-            
-            data = result.get('data', {})
-            ocr_stats = result.get('ocr_stats', {})
-            analysis_stats = result.get('analysis_stats', {})
-            
+
+            data = result.get("data", {})
+            ocr_stats = result.get("ocr_stats", {})
+            analysis_stats = result.get("analysis_stats", {})
+
             # Parse experience to years and months
-            exp_years, exp_months = self._parse_experience(data.get('experience', ''))
-            
+            exp_years, exp_months = self._parse_experience(data.get("experience", ""))
+
             # Helper to safely convert to JSON
             def to_json(val):
                 if val is None:
@@ -447,8 +458,9 @@ class ResumeService:
                 if isinstance(val, (dict, list)):
                     return json.dumps(val, ensure_ascii=False)
                 return str(val) if val else None
-            
-            cursor.execute("""
+
+            cursor.execute(
+                """
                 INSERT INTO resumes (
                     -- System fields
                     id, filename, file_hash, file_path, status,
@@ -505,203 +517,207 @@ class ResumeService:
                     updated_at = NOW(),
                     status = EXCLUDED.status,
                     raw_ai_response = EXCLUDED.raw_ai_response
-            """, (
-                # System fields
-                result['id'],
-                result['filename'],
-                result.get('file_hash'),
-                result.get('file_path'),
-                result.get('status', 'processed'),
-                result.get('extracted_text_length'),
-                result.get('processing_time_seconds'),
-                text[:100000] if text else None,
-                
-                # OCR Metrics
-                ocr_stats.get('method'),
-                ocr_stats.get('duration_seconds'),
-                ocr_stats.get('input_tokens', 0),
-                ocr_stats.get('output_tokens', 0),
-                ocr_stats.get('cost_usd', 0.0),
-                
-                # Analysis Metrics
-                analysis_stats.get('duration_seconds'),
-                analysis_stats.get('prompt_tokens', 0),
-                analysis_stats.get('completion_tokens', 0),
-                analysis_stats.get('cost_usd', 0.0),
-                
-                # AI: Personal
-                data.get('name'),
-                data.get('country_code'),
-                data.get('contact_number'),
-                data.get('email_id'),
-                data.get('age'),
-                data.get('current_location'),
-                to_json(data.get('languages_known', [])),
-                
-                # AI: Education
-                to_json(data.get('education_qualification')),
-                data.get('specialization'),
-                to_json(data.get('certifications', [])),
-                
-                # AI: Experience
-                data.get('experience'),
-                exp_years,
-                exp_months,
-                data.get('current_organisation'),
-                data.get('current_designation'),
-                
-                # AI: Textile Classification
-                data.get('category'),
-                self._determine_candidate_type(data),
-                to_json(data.get('department', [])),
-                to_json(data.get('division', [])),
-                to_json(data.get('functions', [])),
-                
-                # AI: Technical
-                to_json(data.get('machines_brands', [])),
-                to_json(data.get('machines_model', [])),
-                to_json(data.get('skills', [])),
-                to_json(data.get('raw_material_expertise', [])),
-                data.get('plant_scale_capacity'),
-                
-                # AI: Assessment
-                data.get('summarize'),
-                min(data.get('vote', 3), 5) if data.get('vote') else None,
-                data.get('consideration'),
-                json.dumps(data, ensure_ascii=False),
-                
-                # Extra Fields
-                to_json(data.get('roles', [])),
-                data.get('preferred_location_1'),
-                data.get('preferred_location_2'),
-                to_json(data.get('primary_expertise', [])),
-                to_json(data.get('secondary_expertise', [])),
-                data.get('currency'),
-                data.get('current_ctc'),
-                data.get('expected_ctc'),
-                data.get('notice_period'),
-                data.get('referred_by'),
-                data.get('source'),
-                data.get('remarks'),
-                data.get('lead_status'),
-                data.get('date_of_calling'),
-            ))
-            
+            """,
+                (
+                    # System fields
+                    result["id"],
+                    result["filename"],
+                    result.get("file_hash"),
+                    result.get("file_path"),
+                    result.get("status", "processed"),
+                    result.get("extracted_text_length"),
+                    result.get("processing_time_seconds"),
+                    text[:100000] if text else None,
+                    # OCR Metrics
+                    ocr_stats.get("method"),
+                    ocr_stats.get("duration_seconds"),
+                    ocr_stats.get("input_tokens", 0),
+                    ocr_stats.get("output_tokens", 0),
+                    ocr_stats.get("cost_usd", 0.0),
+                    # Analysis Metrics
+                    analysis_stats.get("duration_seconds"),
+                    analysis_stats.get("prompt_tokens", 0),
+                    analysis_stats.get("completion_tokens", 0),
+                    analysis_stats.get("cost_usd", 0.0),
+                    # AI: Personal
+                    data.get("name"),
+                    data.get("country_code"),
+                    data.get("contact_number"),
+                    data.get("email_id"),
+                    data.get("age"),
+                    data.get("current_location"),
+                    to_json(data.get("languages_known", [])),
+                    # AI: Education
+                    to_json(data.get("education_qualification")),
+                    data.get("specialization"),
+                    to_json(data.get("certifications", [])),
+                    # AI: Experience
+                    data.get("experience"),
+                    exp_years,
+                    exp_months,
+                    data.get("current_organisation"),
+                    data.get("current_designation"),
+                    # AI: Textile Classification
+                    data.get("category"),
+                    self._determine_candidate_type(data),
+                    to_json(data.get("department", [])),
+                    to_json(data.get("division", [])),
+                    to_json(data.get("functions", [])),
+                    # AI: Technical
+                    to_json(data.get("machines_brands", [])),
+                    to_json(data.get("machines_model", [])),
+                    to_json(data.get("skills", [])),
+                    to_json(data.get("raw_material_expertise", [])),
+                    data.get("plant_scale_capacity"),
+                    # AI: Assessment
+                    data.get("summarize"),
+                    min(data.get("vote", 3), 5) if data.get("vote") else None,
+                    data.get("consideration"),
+                    json.dumps(data, ensure_ascii=False),
+                    # Extra Fields
+                    to_json(data.get("roles", [])),
+                    data.get("preferred_location_1"),
+                    data.get("preferred_location_2"),
+                    to_json(data.get("primary_expertise", [])),
+                    to_json(data.get("secondary_expertise", [])),
+                    data.get("currency"),
+                    data.get("current_ctc"),
+                    data.get("expected_ctc"),
+                    data.get("notice_period"),
+                    data.get("referred_by"),
+                    data.get("source"),
+                    data.get("remarks"),
+                    data.get("lead_status"),
+                    data.get("date_of_calling"),
+                ),
+            )
+
             conn.commit()
             cursor.close()
             conn.close()
-            
+
             logger.info(f"Resume stored in database: {result['id']}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Database storage failed: {e}")
             return False
-    
+
     def _determine_candidate_type(self, data: Dict[str, Any]) -> str:
         """Determine candidate type based on extracted data."""
         # Check for textile-specific indicators
-        textile_departments = {'spinning', 'weaving', 'knitting', 'dyeing', 'processing', 'garment'}
-        textile_machines = {'rieter', 'toyota', 'picanol', 'truetzschler', 'marzoli', 'saurer'}
-        
-        departments = [d.lower() for d in data.get('department', [])]
-        machines = [m.lower() for m in data.get('machines_brands', [])]
-        category = (data.get('category') or '').lower()
-        
+        textile_departments = {"spinning", "weaving", "knitting", "dyeing", "processing", "garment"}
+        textile_machines = {"rieter", "toyota", "picanol", "truetzschler", "marzoli", "saurer"}
+
+        departments = [d.lower() for d in data.get("department", [])]
+        machines = [m.lower() for m in data.get("machines_brands", [])]
+        category = (data.get("category") or "").lower()
+
         # Check for textile
         is_textile = (
-            any(d in textile_departments for d in departments) or
-            any(m in textile_machines for m in machines) or
-            'textile' in str(data.get('education_qualification', '')).lower()
+            any(d in textile_departments for d in departments)
+            or any(m in textile_machines for m in machines)
+            or "textile" in str(data.get("education_qualification", "")).lower()
         )
-        
+
         # Check for technical vs non-technical
-        is_technical = category != 'commercial' and (
-            departments or machines or
-            any(f in str(data.get('functions', [])).lower() for f in ['production', 'quality', 'maintenance'])
+        is_technical = category != "commercial" and (
+            departments
+            or machines
+            or any(
+                f in str(data.get("functions", [])).lower()
+                for f in ["production", "quality", "maintenance"]
+            )
         )
-        
+
         if is_textile and is_technical:
-            return 'textile'
+            return "textile"
         elif is_textile and not is_technical:
-            return 'non-textile' # Changed from non-technical for consistency/clarity, or keep original logic
+            return "non-textile"  # Changed from non-technical for consistency/clarity, or keep original logic
         elif is_technical:
-            return 'technical'
+            return "technical"
         else:
-            return 'non-textile'
-    
+            return "non-textile"
+
     def _store_failed_resume(self, result: Dict[str, Any], error: str) -> bool:
         """Store failed resume attempt for tracking."""
         if not self._db_available:
             return False
-            
+
         try:
             conn = psycopg2.connect(self.db_url)
             cursor = conn.cursor()
-            
-            cursor.execute("""
+
+            cursor.execute(
+                """
                 INSERT INTO resumes (id, filename, file_hash, file_path, status, error_message)
                 VALUES (%s, %s, %s, %s, 'failed', %s)
                 ON CONFLICT (id) DO UPDATE SET
                     status = 'failed',
                     error_message = EXCLUDED.error_message,
                     updated_at = NOW()
-            """, (
-                result['id'],
-                result['filename'],
-                result.get('file_hash'),
-                result.get('file_path'),
-                error[:1000],
-            ))
-            
+            """,
+                (
+                    result["id"],
+                    result["filename"],
+                    result.get("file_hash"),
+                    result.get("file_path"),
+                    error[:1000],
+                ),
+            )
+
             conn.commit()
             cursor.close()
             conn.close()
             return True
         except:
             return False
-    
+
     def _parse_experience(self, exp_str: str) -> tuple:
         """Parse experience string to (years, months) tuple."""
         if not exp_str:
             return (None, 0)
         try:
             import re
-            years_match = re.search(r'(\d+)\s*years?', exp_str, re.IGNORECASE)
-            months_match = re.search(r'(\d+)\s*months?', exp_str, re.IGNORECASE)
-            
+
+            years_match = re.search(r"(\d+)\s*years?", exp_str, re.IGNORECASE)
+            months_match = re.search(r"(\d+)\s*months?", exp_str, re.IGNORECASE)
+
             years = int(years_match.group(1)) if years_match else None
             months = int(months_match.group(1)) if months_match else 0
-            
+
             return (years, months)
         except:
             return (None, 0)
-    
+
     def _parse_experience_years(self, exp_str: str) -> Optional[int]:
         """Parse experience string to years integer (legacy compat)."""
         years, _ = self._parse_experience(exp_str)
         return years
-    
+
     def _save_extracted_text(self, text: str, resume_id: str) -> Optional[Path]:
         """Save extracted text as .txt file."""
         try:
             date_dir = self.storage_path / datetime.now().strftime("%Y-%m")
             date_dir.mkdir(parents=True, exist_ok=True)
-            
+
             txt_path = date_dir / f"{resume_id}_extracted.txt"
-            txt_path.write_text(text, encoding='utf-8')
-            
+            txt_path.write_text(text, encoding="utf-8")
+
             logger.debug(f"Saved extracted text to {txt_path}")
             return txt_path
         except Exception as e:
             logger.error(f"Failed to save extracted text: {e}")
             return None
-    
+
     def check_database_health(self) -> Dict[str, Any]:
         """Check database health status."""
         if not self.db_url:
-            return {"status": "disabled", "message": "RESUME_DATABASE_URL/TEXCOMS_DB_URL not configured"}
-            
+            return {
+                "status": "disabled",
+                "message": "RESUME_DATABASE_URL/TEXCOMS_DB_URL not configured",
+            }
+
         try:
             conn = psycopg2.connect(self.db_url, connect_timeout=5)
             cursor = conn.cursor()
@@ -709,7 +725,7 @@ class ResumeService:
             count = cursor.fetchone()[0]
             cursor.close()
             conn.close()
-            
+
             return {
                 "status": "healthy",
                 "resume_count": count,

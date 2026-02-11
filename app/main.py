@@ -98,6 +98,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 # Security Middleware
 @app.middleware("http")
 async def api_key_security(request: Request, call_next):
@@ -109,20 +110,12 @@ async def api_key_security(request: Request, call_next):
         return await call_next(request)
 
     # Public endpoints whitelist
-    public_paths = {
-        "/", 
-        "/docs", 
-        "/redoc", 
-        "/openapi.json", 
-        "/health", 
-        "/info",
-        "/favicon.ico"
-    }
-    
+    public_paths = {"/", "/docs", "/redoc", "/openapi.json", "/health", "/info", "/favicon.ico"}
+
     # Check exact match or prefix for public resources
     if request.url.path in public_paths:
         return await call_next(request)
-        
+
     # Validation
     api_key = request.headers.get("x-api-key")
     if not api_key or api_key != settings.API_SECURITY_KEY:
@@ -130,10 +123,10 @@ async def api_key_security(request: Request, call_next):
             status_code=401,
             content={
                 "status": "error",
-                "message": "Unauthorized: Invalid or missing x-api-key header"
-            }
+                "message": "Unauthorized: Invalid or missing x-api-key header",
+            },
         )
-        
+
     return await call_next(request)
 
 
@@ -194,7 +187,7 @@ async def health_check():
         "configuration": {
             "openai_configured": settings.OPENAI_API_KEY is not None,
             "pinecone_configured": settings.PINECONE_API_KEY is not None,
-            "database_configured": settings.DATABASE_URL is not None,
+            "database_configured": settings.FINAL_DATABASE_URL is not None,
             "opik_configured": (
                 settings.OPIK_API_KEY is not None if hasattr(settings, "OPIK_API_KEY") else False
             ),
@@ -1425,7 +1418,7 @@ def initialize_services():
 
     # Initialize Text-to-SQL service if database is available
     try:
-        if settings.DATABASE_URL and settings.OPENAI_API_KEY:
+        if settings.FINAL_DATABASE_URL and settings.OPENAI_API_KEY:
             logger.info("Initializing Text-to-SQL service...")
             sql_service = TextToSQLService(
                 query_cache_service=query_cache_service

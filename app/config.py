@@ -76,14 +76,16 @@ class Settings(BaseSettings):
     # ═══════════════════════════════════════════════════════════════════
     # PostgreSQL Database (VPS)
     # ═══════════════════════════════════════════════════════════════════
+    DATABASE_URL: Optional[str] = None  # Primary database configuration from .env
     TEXCOMS_DB_URL: Optional[str] = None  # Renamed from RESUME_DATABASE_URL
     RESUME_DATABASE_URL: Optional[str] = (
-        None  # Keeping for backward compat if needed, but pref is TEXCOMS_DB_URL
+        None  # Keeping for backward compat if needed, but pref is DATABASE_URL
     )
 
     @property
-    def DATABASE_URL(self) -> Optional[str]:
-        return self.TEXCOMS_DB_URL or self.RESUME_DATABASE_URL
+    def FINAL_DATABASE_URL(self) -> Optional[str]:
+        """Get database URL with fallback chain."""
+        return self.DATABASE_URL or self.TEXCOMS_DB_URL or self.RESUME_DATABASE_URL
 
     # ═══════════════════════════════════════════════════════════════════
     # Redis/DragonflyDB Cache (VPS)

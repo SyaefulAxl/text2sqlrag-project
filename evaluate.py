@@ -55,7 +55,7 @@ class RAGEvaluator:
             print(f"WARNING: Failed to initialize RAG services: {e}")
 
         try:
-            if settings.DATABASE_URL and settings.OPENAI_API_KEY:
+            if settings.FINAL_DATABASE_URL and settings.OPENAI_API_KEY:
                 print("Initializing SQL service...")
                 self.sql_service = TextToSQLService()
                 self.sql_service.complete_training()
@@ -71,10 +71,10 @@ class RAGEvaluator:
         if not self.test_queries_path.exists():
             raise FileNotFoundError(f"Test queries file not found: {self.test_queries_path}")
 
-        with open(self.test_queries_path, 'r') as f:
+        with open(self.test_queries_path, "r") as f:
             data = json.load(f)
 
-        return data['test_queries']
+        return data["test_queries"]
 
     async def run_query(self, test_query: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -86,98 +86,88 @@ class RAGEvaluator:
         Returns:
             Result dictionary with question, answer, contexts, ground_truth
         """
-        query_type = test_query['type']
-        question = test_query['question']
-        ground_truth = test_query['ground_truth']
+        query_type = test_query["type"]
+        question = test_query["question"]
+        ground_truth = test_query["ground_truth"]
 
         result = {
-            "query_id": test_query['id'],
+            "query_id": test_query["id"],
             "question": question,
             "ground_truth": ground_truth,
             "query_type": query_type,
             "answer": None,
             "contexts": [],
-            "error": None
+            "error": None,
         }
 
         try:
             # Route based on query type
             if query_type == "SQL":
                 if not self.sql_service:
-                    result['error'] = "SQL service not initialized"
-                    result['answer'] = "N/A - SQL service unavailable"
+                    result["error"] = "SQL service not initialized"
+                    result["answer"] = "N/A - SQL service unavailable"
                     return result
 
                 # Generate and execute SQL
                 sql_result = self.sql_service.generate_sql_for_approval(question)
                 execution_result = self.sql_service.execute_approved_query(
-                    sql_result['query_id'],
-                    approved=True
+                    sql_result["query_id"], approved=True
                 )
 
                 # Format answer from SQL results
                 answer_parts = [
                     f"SQL Query: {execution_result['sql']}",
                     f"Results: {json.dumps(execution_result['results'][:5])}",  # First 5 rows
-                    f"Total rows: {execution_result['result_count']}"
+                    f"Total rows: {execution_result['result_count']}",
                 ]
-                result['answer'] = "\n".join(answer_parts)
-                result['contexts'] = [execution_result['sql']]  # SQL as context
+                result["answer"] = "\n".join(answer_parts)
+                result["contexts"] = [execution_result["sql"]]  # SQL as context
 
             elif query_type == "DOCUMENTS":
                 if not self.rag_service:
-                    result['error'] = "RAG service not initialized"
-                    result['answer'] = "N/A - RAG service unavailable"
+                    result["error"] = "RAG service not initialized"
+                    result["answer"] = "N/A - RAG service unavailable"
                     return result
 
                 # Query documents using RAG
                 rag_result = await self.rag_service.generate_answer(
-                    question=question,
-                    top_k=3,
-                    namespace="default",
-                    include_sources=True
+                    question=question, top_k=3, namespace="default", include_sources=True
                 )
 
-                result['answer'] = rag_result['answer']
-                result['contexts'] = [
-                    chunk['text'] for chunk in rag_result.get('sources', [])
-                ]
+                result["answer"] = rag_result["answer"]
+                result["contexts"] = [chunk["text"] for chunk in rag_result.get("sources", [])]
 
             elif query_type == "HYBRID":
                 if not self.sql_service or not self.rag_service:
-                    result['error'] = "Both SQL and RAG services required for HYBRID"
-                    result['answer'] = "N/A - Services unavailable"
+                    result["error"] = "Both SQL and RAG services required for HYBRID"
+                    result["answer"] = "N/A - Services unavailable"
                     return result
 
                 # Get SQL results
                 sql_result = self.sql_service.generate_sql_for_approval(question)
                 execution_result = self.sql_service.execute_approved_query(
-                    sql_result['query_id'],
-                    approved=True
+                    sql_result["query_id"], approved=True
                 )
 
                 # Get document context
                 rag_result = await self.rag_service.generate_answer(
-                    question=question,
-                    top_k=3,
-                    namespace="default",
-                    include_sources=True
+                    question=question, top_k=3, namespace="default", include_sources=True
                 )
 
                 # Combine both
                 answer_parts = [
                     f"SQL Results: {json.dumps(execution_result['results'][:5])}",
-                    f"Context from Documents: {rag_result['answer']}"
+                    f"Context from Documents: {rag_result['answer']}",
                 ]
-                result['answer'] = "\n".join(answer_parts)
-                result['contexts'] = [
-                    execution_result['sql'],
-                    *[chunk['text'] for chunk in rag_result.get('sources', [])]
+                result["answer"] = "\n".join(answer_parts)
+                result["contexts"] = [
+                    execution_result["sql"],
+                    *[chunk["text"] for chunk in rag_result.get("sources", [])],
                 ]
 
         except Exception as e:
-            result['error'] = str(e)
-            result['answer'] = f"Error: {str(e)}"
+            result["error"] = str(e)
+            result["answer"] = f"Error: {str(e)}"
 
         return result
 
@@ -197,7 +187,7 @@ class RAGEvaluator:
             result = await self.run_query(test_query)
             results.append(result)
 
-            if result['error']:
+            if result["error"]:
                 print(f"ERROR: {result['error']}")
             else:
                 print(f"✓ Query completed")
@@ -216,40 +206,39 @@ class RAGEvaluator:
             Evaluation scores and metrics
         """
         # Filter out results with errors
-        valid_results = [r for r in results if not r['error'] and r['answer'] != "N/A - Services unavailable"]
+        valid_results = [
+            r for r in results if not r["error"] and r["answer"] != "N/A - Services unavailable"
+        ]
 
         if not valid_results:
             print("\nWARNING: No valid results to evaluate (services not initialized)")
             return {
                 "error": "No valid results - services not initialized",
                 "evaluated_queries": 0,
-                "skipped_queries": len(results)
+                "skipped_queries": len(results),
             }
 
         print(f"\nEvaluating {len(valid_results)} queries with RAGAS...")
 
         # Convert to RAGAS Dataset format
         dataset_dict = {
-            "question": [r['question'] for r in valid_results],
-            "answer": [r['answer'] for r in valid_results],
-            "contexts": [r['contexts'] for r in valid_results],
-            "ground_truth": [r['ground_truth'] for r in valid_results]
+            "question": [r["question"] for r in valid_results],
+            "answer": [r["answer"] for r in valid_results],
+            "contexts": [r["contexts"] for r in valid_results],
+            "ground_truth": [r["ground_truth"] for r in valid_results],
         }
 
         dataset = Dataset.from_dict(dataset_dict)
 
         # Evaluate with RAGAS metrics
         try:
-            evaluation_result = evaluate(
-                dataset,
-                metrics=[faithfulness, answer_relevancy]
-            )
+            evaluation_result = evaluate(dataset, metrics=[faithfulness, answer_relevancy])
 
             scores = {
-                "faithfulness": float(evaluation_result['faithfulness']),
-                "answer_relevancy": float(evaluation_result['answer_relevancy']),
+                "faithfulness": float(evaluation_result["faithfulness"]),
+                "answer_relevancy": float(evaluation_result["answer_relevancy"]),
                 "evaluated_queries": len(valid_results),
-                "skipped_queries": len(results) - len(valid_results)
+                "skipped_queries": len(results) - len(valid_results),
             }
 
             print("\n" + "=" * 60)
@@ -265,11 +254,7 @@ class RAGEvaluator:
 
         except Exception as e:
             print(f"\nERROR during RAGAS evaluation: {e}")
-            return {
-                "error": str(e),
-                "evaluated_queries": 0,
-                "skipped_queries": len(results)
-            }
+            return {"error": str(e), "evaluated_queries": 0, "skipped_queries": len(results)}
 
     def save_results(self, results: List[Dict[str, Any]], scores: Dict[str, Any]):
         """Save evaluation results to JSON file."""
@@ -281,12 +266,12 @@ class RAGEvaluator:
             "summary": {
                 "faithfulness_target": 0.7,
                 "answer_relevancy_target": 0.8,
-                "faithfulness_met": scores.get('faithfulness', 0) > 0.7,
-                "answer_relevancy_met": scores.get('answer_relevancy', 0) > 0.8
-            }
+                "faithfulness_met": scores.get("faithfulness", 0) > 0.7,
+                "answer_relevancy_met": scores.get("answer_relevancy", 0) > 0.8,
+            },
         }
 
-        with open(self.results_path, 'w') as f:
+        with open(self.results_path, "w") as f:
             json.dump(output, f, indent=2)
 
         print(f"\n✓ Results saved to: {self.results_path}")
