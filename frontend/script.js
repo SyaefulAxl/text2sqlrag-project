@@ -59,46 +59,6 @@ const modalClose = document.querySelector('.modal-close');
 // Format selection
 let selectedFormat = 'default'; // default, cornell, obsidian, study
 
-/**
- * Check for common typos and suggest corrections
- */
-function checkForTypos(text) {
-  const corrections = {
-    'spaning': 'spinning',
-    'weving': 'weaving',
-    'kniting': 'knitting',
-    'dye': 'dye',
-    'fabrick': 'fabric',
-    'yarnn': 'yarn',
-    'thread': 'thread',
-    'loom': 'loom',
-    'fible': 'fibre',
-    'cotton': 'cotton',
-  };
-
-  // Convert text to lowercase for checking
-  const lowerText = text.toLowerCase();
-  
-  for (const [typo, correct] of Object.entries(corrections)) {
-    if (lowerText.includes(typo)) {
-      const correctedText = text.replace(
-        new RegExp(typo, 'gi'),
-        correct
-      );
-      
-      if (correctedText !== text) {
-        return {
-          suggested: true,
-          original: text,
-          corrected: correctedText,
-        };
-      }
-    }
-  }
-
-  return { suggested: false };
-}
-
 // Event Listeners
 sendBtn.addEventListener('click', handleSendMessage);
 questionInput.addEventListener('keypress', (e) => {
@@ -127,18 +87,6 @@ async function handleSendMessage() {
     return;
   }
 
-  // Check for typos and suggest corrections
-  const correctionSuggestion = checkForTypos(question);
-  if (correctionSuggestion && correctionSuggestion.suggested) {
-    const useOriginal = confirm(
-      `Did you mean "${correctionSuggestion.corrected}"?\nClick OK to use the corrected version or Cancel to use "${question}" as is.`
-    );
-    if (useOriginal && correctionSuggestion.corrected !== question) {
-      questionInput.value = correctionSuggestion.corrected;
-      // Don't proceed, let user confirm again
-      return;
-    }
-  }
 
   // Add user message to chat
   addMessage(question, 'user');
@@ -202,7 +150,7 @@ function getFriendlyErrorMessage(error) {
   } else if (errorMsg.includes('connection') || errorMsg.includes('cannot')) {
     return "Connection Error: I'm having trouble connecting to the backend. Please ensure the API server is running on port 8000 and try again.";
   } else if (errorMsg.includes('validation')) {
-    return "Validation Error: There might be an issue with how your question was formatted. Please try rephrasing it.";
+    return 'Validation Error: There might be an issue with how your question was formatted. Please try rephrasing it.';
   } else {
     return `Error: ${escapeHtml(error.message)}. Please try again or contact our support team.`;
   }
@@ -266,18 +214,24 @@ function addMessage(contentOrData, sender, isError = false) {
     const metaDiv = document.createElement('div');
     metaDiv.className = 'message-meta';
 
+    // Show typo correction info if applicable
+    if (contentOrData.typo_corrected && contentOrData.original_question) {
+      const correctionDiv = document.createElement('div');
+      correctionDiv.style.padding = '8px 12px';
+      correctionDiv.style.background = '#fff3cd';
+      correctionDiv.style.border = '1px solid #ffc107';
+      correctionDiv.style.borderRadius = '4px';
+      correctionDiv.style.marginBottom = '8px';
+      correctionDiv.style.fontSize = '0.9em';
+      correctionDiv.innerHTML = `<strong>Typo Corrected:</strong> "${escapeHtml(contentOrData.original_question)}" → "${escapeHtml(contentOrData.question)}"`;
+      contentDiv.insertBefore(correctionDiv, contentDiv.firstChild);
+    }
+
     // Add badges
     if (contentOrData.chunks_used) {
       const badge = document.createElement('span');
       badge.className = 'meta-badge';
       badge.innerHTML = `📄 ${contentOrData.chunks_used} sources found`;
-      metaDiv.appendChild(badge);
-    }
-
-    if (contentOrData.model) {
-      const badge = document.createElement('span');
-      badge.className = 'meta-badge';
-      badge.innerHTML = `🤖 ${contentOrData.model}`;
       metaDiv.appendChild(badge);
     }
 

@@ -540,7 +540,11 @@ async def query_documents(question: str, top_k: int = 3, format_style: str = "de
 
     try:
         result = await rag_service.generate_answer(
-            question=question, top_k=top_k, namespace="default", include_sources=True, format_style=format_style
+            question=question,
+            top_k=top_k,
+            namespace="default",
+            include_sources=True,
+            format_style=format_style,
         )
 
         # Update OPIK span with metadata and cost tracking
@@ -558,7 +562,7 @@ async def query_documents(question: str, top_k: int = 3, format_style: str = "de
                         "chunks_retrieved": result.get("chunks_used", 0),
                         "model": result.get("model", "unknown"),
                     },
-                    "model": "gpt-4o-mini",
+                    "model": "gpt-4-turbo-preview",
                     "provider": "openai",
                 }
 

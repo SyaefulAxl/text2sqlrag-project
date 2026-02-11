@@ -38,7 +38,7 @@ class RAGService:
         self.query_cache_service = query_cache_service  # Optional cache service
 
         # LLM configuration
-        self.model = "gpt-4o-mini"  # Cost-optimized model
+        self.model = "gpt-4-turbo-preview"  # High quality model
         self.temperature = 0.1
         self.max_tokens = 1000
 
@@ -76,6 +76,13 @@ class RAGService:
                 - cost_saved: Estimated cost saved if cache hit (NEW)
         """
         try:
+            # Step 0: Correct any typos in the question
+            original_question = question
+            corrected_question, was_corrected = self._correct_typos(question)
+            if was_corrected:
+                logger.info(f"Typo correction: '{original_question}' → '{corrected_question}'")
+                question = corrected_question
+
             # Check cache first (if cache service is available)
             if self.query_cache_service and self.query_cache_service.enabled:
                 cache_key = self.query_cache_service.get_rag_key(question, top_k)
@@ -104,6 +111,8 @@ class RAGService:
             if not chunks:
                 return {
                     "question": question,
+                    "original_question": original_question if was_corrected else None,
+                    "typo_corrected": was_corrected,
                     "answer": "I don't have enough information to answer that question. Please upload relevant documents first.",
                     "sources": [],
                     "chunks_used": 0,
@@ -176,6 +185,8 @@ class RAGService:
             # Step 6: Format response with usage data and costs
             result = {
                 "question": question,
+                "original_question": original_question if was_corrected else None,
+                "typo_corrected": was_corrected,
                 "answer": answer,
                 "chunks_used": len(chunks),
                 "model": self.model,
@@ -239,6 +250,42 @@ class RAGService:
 
         return "\n".join(context_parts)
 
+    def _correct_typos(self, text: str) -> tuple[str, bool]:
+        """
+        Detect and correct common typos in the question.
+
+        Args:
+            text: Input text
+
+        Returns:
+            Tuple of (corrected_text, was_corrected)
+        """
+        corrections = {
+            'spaning': 'spinning',
+            'weving': 'weaving',
+            'kniting': 'knitting',
+            'fabrick': 'fabric',
+            'fible': 'fibre',
+            'yarnn': 'yarn',
+            'thrread': 'thread',
+            'looom': 'loom',
+            'cottton': 'cotton',
+        }
+
+        corrected = text
+        was_corrected = False
+
+        for typo, correct in corrections.items():
+            if typo.lower() in text.lower():
+                # Case-insensitive replacement
+                import re
+                pattern = re.compile(re.escape(typo), re.IGNORECASE)
+                if pattern.search(text):
+                    corrected = pattern.sub(correct, corrected)
+                    was_corrected = True
+
+        return corrected, was_corrected
+
     def _create_prompt(self, question: str, context: str, format_style: str = "default") -> str:
         """
         Create the prompt for the LLM with optional format style.
@@ -252,7 +299,7 @@ class RAGService:
             Formatted prompt string
         """
         format_instructions = self._get_format_instructions(format_style)
-        
+
         prompt = f"""You are a helpful educational assistant that answers questions based on provided context.
 Your responses should be:
 - Well-organized with clear hierarchy
@@ -276,10 +323,10 @@ Answer:"""
     def _get_format_instructions(self, format_style: str) -> str:
         """
         Get format instructions based on style.
-        
+
         Args:
             format_style: Style of formatting (default, cornell, obsidian, study)
-        
+
         Returns:
             Format instructions string
         """
@@ -305,7 +352,7 @@ Answer:"""
 - Use **bold** for important terms
 - Use - for bullet points with nested indentation
 - Organize by topic logically
-- Break down complex ideas into main points and sub-points"""
+- Break down complex ideas into main points and sub-points""",
         }
         return formats.get(format_style, formats["default"])
 
